@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http.Json;
 using HTBAM.Application.DTOs;
 using HTBAM.Application.Interfaces;
@@ -32,7 +32,7 @@ public sealed class AiClient(HttpClient http) : IAiClient
     {
         using var res = await http.PostAsJsonAsync("face-enrollments/start", request, ct);
         if (res.StatusCode == HttpStatusCode.NotImplemented || res.StatusCode == HttpStatusCode.ServiceUnavailable)
-            throw new InvalidOperationException("AI Face Enrollment chưa sẵn sàng. Enrollment vẫn được giữ PENDING_AI.");
+            throw new InvalidOperationException("AI Face Enrollment chÆ°a sáºµn sÃ ng. Enrollment váº«n Ä‘Æ°á»£c giá»¯ PENDING_AI.");
         res.EnsureSuccessStatusCode();
         return await res.Content.ReadFromJsonAsync<StartFaceEnrollmentResponse>(cancellationToken: ct) ?? throw new InvalidOperationException("AI face enrollment response empty");
     }
@@ -43,3 +43,4 @@ public sealed class AiClient(HttpClient http) : IAiClient
         catch { return false; }
     }
 }
+

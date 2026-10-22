@@ -38,3 +38,8 @@ apps/web/dist/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local production AI model artifacts
+services/ai/models/**
+!services/ai/models/htbamx/
+!services/ai/models/htbamx/.gitkeep

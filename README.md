@@ -5,14 +5,14 @@
 Bộ source nền chính thức cho KLCN **Hệ thống quản lý và phân tích hành vi sinh viên trong lớp học theo thời gian thực**.
 
 ## Phạm vi bản này
-Bản này hoàn thiện các phần **không phụ thuộc model đã train**: Web React, ASP.NET Core API, SQL Server schema, JWT/RBAC, quản lý danh mục, sinh viên, roster, camera/video, Face Enrollment storage, Session lifecycle, realtime contract/SignalR, stable identity storage, alert/rule, attendance policy, history, reports, Excel/PDF, search, audit và UI responsive.
+Bản này hoàn thiện các phần **không phụ thuộc model đã train**: Web Angular, ASP.NET Core API, SQL Server schema, JWT/RBAC, quản lý danh mục, sinh viên, roster, camera/video, Face Enrollment storage, Session lifecycle, realtime contract/SignalR, stable identity storage, alert/rule, attendance policy, history, reports, Excel/PDF, search, audit và UI responsive.
 
 Các khối AI/CV production vẫn cố ý ở trạng thái contract-only vì model chưa train/tích hợp: YOLO, BoT-SORT, ArcFace, OSNet, Stable Identity Resolver, MediaPipe feature extractor, HTBAM (GRU + Transformer), smoothing và KMeans/Intelligent KMeans/pseudo-label pipeline. LLM Provider là module backend độc lập và đã được tích hợp để diễn giải summary có sẵn; hệ thống **không sinh dữ liệu AI/CV giả**.
 
 Flutter chưa nằm trong phạm vi hiện tại theo yêu cầu triển khai hiện tại; Backend API được giữ reusable để thêm Flutter sau.
 
 ## Stack
-- Web: React + TypeScript + Vite
+- Web: Angular + TypeScript
 - Backend: ASP.NET Core Web API (.NET 9), EF Core, SignalR
 - Database: SQL Server
 - Object storage: MinIO private bucket
@@ -71,7 +71,7 @@ Xem `docs/FEATURE_MATRIX.md`, `docs/WORKFLOWS_AND_STORAGE.md`, `docs/MODEL_INTEG
 
 ## Google Gemini LLM Provider
 
-Backend dùng Google Gemini qua abstraction `ILlmProvider`; model mặc định là `gemini-2.5-pro`. React không gọi Gemini trực tiếp. Khi Gemini tắt, thiếu cấu hình hoặc gặp lỗi, report vẫn sinh nhận xét bằng `RULE_BASED_FALLBACK`.
+Backend dùng Google Gemini qua abstraction `ILlmProvider`; model mặc định là `gemini-2.5-pro`. Angular không gọi Gemini trực tiếp. Khi Gemini tắt, thiếu cấu hình hoặc gặp lỗi, report vẫn sinh nhận xét bằng `RULE_BASED_FALLBACK`.
 
 =========================================================
 VỊ TRÍ THAY GEMINI API KEY THẬT

@@ -6,7 +6,8 @@ public record UpsertStudentRequest(string StudentCode,string FullName,string Ema
 public record CreateSessionRequest(long ClassSectionId,long? RoomId,long? CameraId,long? VideoId,long AttendancePolicyId,DateTime ScheduledStart,DateTime? ScheduledEnd,long[] StudentIds,string AlertProfile="DEFAULT");
 public record SessionDto(long Id,long ClassSectionId,DateTime ScheduledStart,DateTime? ScheduledEnd,DateTime? StartedAt,DateTime? EndedAt,string Status,long? CameraId,long? VideoId,long AttendancePolicyId);
 public record AiArtifactUploadTarget(string ObjectKey,string UploadUrl,string FileName,string ContentType);
-public record StartAiJobRequest(long SessionId,string SourceType,string Source,string CorrelationId,long[] RosterStudentIds,string AlertProfile,string CallbackUrl,string CallbackApiKey,AiArtifactUploadTarget? AnnotatedVideoUpload=null);
+public record AiRosterCandidate(long StudentId,string TemplateReadUrl,string TemplateVersion,string ModelName,int EmbeddingDimension);
+public record StartAiJobRequest(long SessionId,string SourceType,string Source,string CorrelationId,long[] RosterStudentIds,string AlertProfile,string CallbackUrl,string CallbackApiKey,AiArtifactUploadTarget? AnnotatedVideoUpload=null,AiRosterCandidate[]? RosterCandidates=null);
 public record StartAiJobResponse(string JobId,string Status,string ModelVersion);
 public record AiArtifactMetadata(string ObjectKey,string FileName,string ContentType,long SizeBytes,string Sha256);
 public record StopAiJobResponse(string JobId,string Status,AiArtifactMetadata? Artifact=null);

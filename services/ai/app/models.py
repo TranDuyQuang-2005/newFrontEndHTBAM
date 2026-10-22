@@ -1,12 +1,21 @@
 from datetime import datetime
 from pydantic import BaseModel, Field, HttpUrl
 
+
+class RosterCandidate(BaseModel):
+    studentId: int
+    templateReadUrl: str
+    templateVersion: str
+    modelName: str
+    embeddingDimension: int
+
 class StartJobRequest(BaseModel):
     sessionId: int
     sourceType: str
     source: str
     correlationId: str
     rosterStudentIds: list[int]
+    rosterCandidates: list["RosterCandidate"] = Field(default_factory=list)
     alertProfile: str = "DEFAULT"
     callbackUrl: str
     callbackApiKey: str
@@ -81,3 +90,20 @@ class AiEvent(BaseModel):
     startedAt: datetime | None = None
     endedAt: datetime | None = None
     identityDecision: str | None = None
+
+
+class HtbamPredictRequest(BaseModel):
+    rgbEmbedding: list[list[float]]
+    rgbQuality: list[float]
+    semantic: list[list[float]]
+    semanticMask: list[list[float]]
+    pose: list
+    temporalMask: list[bool]
+
+class HtbamPredictResponse(BaseModel):
+    label: str
+    classId: int
+    probability: float
+    probabilities: dict[str, float]
+    modelVersion: str
+    device: str

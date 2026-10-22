@@ -26,6 +26,14 @@ services:
 
   ai:
     build: ../services/ai
+    environment:
+      HTBAM_MODEL_DIR: "/models/htbamx"
+      HTBAM_DEVICE: "${HTBAM_DEVICE:-auto}"
+      HTBAM_FULL_SESSION_PIPELINE: "false"
+    volumes:
+      - "../services/ai/models:/models:ro"
+    ports:
+      - "8001:8001"
     expose:
       - "8001"
     restart: unless-stopped

@@ -99,7 +99,32 @@ public sealed class SessionService(IAppDbContext db, IAiClient ai, ISummaryServi
                     "video/mp4");
             }
 
-            var res = await ai.StartAsync(new StartAiJobRequest(sessionId, sourceType, source, job.CorrelationId, roster, s.AlertProfile, callbackUrl, callbackApiKey, annotatedVideoUpload), ct);
+            var activeTemplates = await db.StudentFaceTemplates
+                .Where(x => roster.Contains(x.StudentId) && x.IsActive && x.QualityStatus == "PASS")
+                .ToListAsync(ct);
+
+            var rosterCandidates = new List<AiRosterCandidate>();
+            foreach (var template in activeTemplates)
+            {
+                rosterCandidates.Add(new AiRosterCandidate(
+                    template.StudentId,
+                    await storage.GetInternalReadUrlAsync(template.TemplateRef, 21600, ct),
+                    template.TemplateVersion,
+                    template.ModelName,
+                    template.EmbeddingDimension));
+            }
+
+            var res = await ai.StartAsync(new StartAiJobRequest(
+                sessionId,
+                sourceType,
+                source,
+                job.CorrelationId,
+                roster,
+                s.AlertProfile,
+                callbackUrl,
+                callbackApiKey,
+                annotatedVideoUpload,
+                rosterCandidates.ToArray()), ct);
             if (!res.Status.Equals("RUNNING", StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException($"AI không xác nhận RUNNING: {res.Status}");
 
             var now = DateTime.UtcNow;

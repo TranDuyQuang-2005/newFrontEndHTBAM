@@ -86,8 +86,8 @@ Lưu: `StableIdentities`, `TrackSegments`, `IdentityLinks`.
 Lưu: `AiEventReceipts` cộng với bảng nghiệp vụ tương ứng.
 
 ## 8. HTBAM và BehaviorEvent
-1. Mỗi stable_id có buffer riêng; không trộn feature giữa người.
-2. Khi đủ window 30x14, HTBAM sinh probability/state; temporal smoothing tạo segment ổn định.
+1. Mỗi stable_id có buffer segment riêng; không trộn dữ liệu giữa người.
+2. HTBAM-X dùng causal context T=3: `[t-2,t-1,t] -> t`; mỗi segment 2 giây/16 frame ở 8 FPS, kết hợp MViT RGB embedding + 14 semantic features + pose + temporal mask. Temporal smoothing/EventEngine tạo segment trạng thái ổn định.
 3. Backend nhận segment có `StartedAt < EndedAt`, label, probability, quality, model/threshold version.
 4. 5 state timeline FOCUSED/DISTRACTED/SLEEPY/ACTIVE/OUT_OF_VIEW không được chồng lấn trên cùng stable_id.
 5. `PHONE_USE` là signal/rule phụ có thể chồng state nên không dùng để cộng valid observed duration.
