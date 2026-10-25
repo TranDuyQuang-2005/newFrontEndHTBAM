@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "generatedAtUtc": "2026-10-22T19:25:44.861984+00:00",
+  "sourceRepo": "E:\\HTBAM_X_official_incremental_checked",
+  "sourceTrees": {
+    "htbamx": "E:\\HTBAM_X_official_incremental_checked\\src\\htbamx",
+    "htbam_builder": "E:\\HTBAM_X_official_incremental_checked\\src\\htbam_builder"
+  },
+  "destinationVendor": "E:\\newFrontEndHTBAM\\services\\ai\\vendor",
+  "policy": {
+    "mirrorMode": "replace",
+    "legacyCopiesKept": false,
+    "excludedCaches": [
+      ".git",
+      ".mypy_cache",
+      ".pytest_cache",
+      ".ruff_cache",
+      "__pycache__"
+    ],
+    "excludedSuffixes": [
+      ".pyc",
+      ".pyo"
+    ]
+  },
+  "packages": {
+    "htbamx": {
+      "fileCount": 12,
+      "files": {
+        "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "behavior_cache.py": "3aa17cfccb7f4d5081b58cad234cbb4bd5d1712ff07ecf7a47bc105abf572791",
+        "cv_split.py": "5ac1b5ea6c78096d09d1520f2a8b510ee00bf78a97cfdbed75fab560fc84d135",
+        "d6_validation.py": "84976daa5e1af110a8ec3076a9d479382c19a4a84fac7017c855e2e29c9eb9d5",
+        "dataset.py": "f51c3f5b0ef00b606c96f846279e0ff360db21f0187c6fefb598d3b168e286e5",
+        "eval_dataset.py": "d48d8c449da6e87f1c73695cd65080e65d1ef60a8db26526972c9d738c74ccbf",
+        "labels.py": "1d8f894a87cdd8bb55c44e4186188e6f8e692763c4321ad103688d18cb7cd3c6",
+        "metrics.py": "be783d5f7716bf4dff0aba50a50aa52b2598ce4d43e09f1d596cb88ba662ebc4",
+        "model.py": "e19a3c5aed621d0bdf26d9aacf13859ed19f9479a50b3ae5910ea66338f68edd",
+        "reporting.py": "c606cf2c7eb8063c4acecc2c9da6ad31363b61434fed6e38e3c0816bda09b69e",
+        "rgb_cache.py": "5d41f93790fac76b6f94d7e18cb36e68b105f770c8ceab33ebe63d6c086b97ce",
+        "train.py": "7372ff77df76e14313c8e96c57cb7d8bd1377955bc5c37df0f0f4dde16760e30"
+      }
+    },
+    "htbam_builder": {
+      "fileCount": 12,
+      "files": {
+        "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "arcface.py": "b7873e6ae8a654c0b2ab013c39d250201a65a07e27d09a6d669179a87b25eef1",
+        "config.py": "72724b18b79a2dc192f2c13b99b028520d66d622930d82f7c112a48d2cd9e7cf",
+        "core.py": "c73bffc572807b19cf4d39df687272a1a1784956c9ad2828fe7065632fe1428b",
+        "d1.py": "813b4f8ab03d53d46d24aa8f50de0b6d67edf3bccf00a0b7d68534675ee34be8",
+        "d2.py": "64a92069a9300ab3cc9d0e73462bed2e76476ceff9bd1e1cdbced89ce765767b",
+        "d3.py": "f9bf605e9e6ea272ea88c7f82a4c334650e7cd1adf7371a13ea7edab2af077b7",
+        "d4.py": "57244e67aee95ab98ce43822c432cda345947a03272b3e34f973af5b3d6c26e4",
+        "d5.py": "1ee312ec434c602b54b8514727104657d049a7530f72cb9bf6cba0726ccb3be9",
+        "model_assets.py": "83598264f78d70ad40f53fa503acc46e87eca58281631989a092658efc9796a5",
+        "ort_runtime.py": "6b9932be5d9037fbe84f64bdac94a20d6b9365f9c9c5bdc3028c150dad5cdc18",
+        "tracking.py": "82826ed5fbffc65add535e1901b8411429c243748dedef10900b6ded46788ad7"
+      }
+    }
+  },
+  "topLevelImports": {
+    "htbamx": [
+      "__future__",
+      "behavior_cache",
+      "csv",
+      "cv2",
+      "d6_validation",
+      "dataclasses",
+      "dataset",
+      "hashlib",
+      "htbam_builder",
+      "json",
+      "math",
+      "matplotlib",
+      "mediapipe",
+      "metrics",
+      "model",
+      "numpy",
+      "pandas",
+      "pathlib",
+      "random",
+      "re",
+      "reporting",
+      "shutil",
+      "sklearn",
+      "torch",
+      "torchvision",
+      "typing",
+      "ultralytics"
+    ],
+    "htbam_builder": [
+      "PIL",
+      "__future__",
+      "bisect",
+      "core",
+      "cv2",
+      "d3",
+      "dataclasses",
+      "gdown",
+      "hashlib",
+      "insightface",
+      "json",
+      "math",
+      "matplotlib",
+      "model_assets",
+      "numpy",
+      "onnxruntime",
+      "ort_runtime",
+      "pandas",
+      "pathlib",
+      "random",
+      "shutil",
+      "sklearn",
+      "torch",
+      "torchreid",
+      "torchvision",
+      "typing",
+      "ultralytics",
+      "yaml"
+    ]
+  }
+}

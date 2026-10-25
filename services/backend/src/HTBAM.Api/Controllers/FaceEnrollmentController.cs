@@ -117,18 +117,58 @@ public sealed class FaceEnrollmentController(
     public async Task<ActionResult> Process(long studentId, long enrollmentId, CancellationToken ct)
     {
         if (!await CanAccessStudent(studentId, ct)) return Forbid();
+
         var capabilities = await ai.CapabilitiesAsync(ct);
         if (!capabilities.FaceEnrollment)
-            return Conflict(new { code = "FACE_MODEL_NOT_READY", message = "Dịch vụ AI đăng ký khuôn mặt chưa sẵn sàng; dữ liệu vẫn được giữ ở trạng thái chờ xử lý.", loadedModels = capabilities.LoadedModels });
+            return Conflict(new
+            {
+                code = "FACE_MODEL_NOT_READY",
+                message = "Dịch vụ AI đăng ký khuôn mặt chưa sẵn sàng; dữ liệu vẫn được giữ ở trạng thái chờ xử lý.",
+                loadedModels = capabilities.LoadedModels
+            });
 
         var baseUrl = cfg["PublicBaseUrl"] ?? $"{Request.Scheme}://{Request.Host}";
         var key = cfg["AiService:CallbackApiKey"] ?? "";
-        var manifest = await enrollments.BuildManifestAsync(studentId, enrollmentId, $"{baseUrl.TrimEnd('/')}/api/ai/face-enrollments/{enrollmentId}/result", key, ct);
-        var response = await ai.StartFaceEnrollmentAsync(manifest, ct);
-        var entity = await db.FaceEnrollmentsSet.FirstAsync(x => x.Id == enrollmentId && x.StudentId == studentId, ct);
-        entity.Status = "PROCESSING"; db.Update(entity); await db.SaveChangesAsync(ct);
-        await audit.WriteAsync(UserContext.Id(User), "FACE_ENROLLMENT_PROCESS", "FaceEnrollment", enrollmentId.ToString(), new { response.JobId, response.Status }, ct);
-        return Ok(response);
+
+        var manifest = await enrollments.BuildManifestAsync(
+            studentId,
+            enrollmentId,
+            $"{baseUrl.TrimEnd('/')}/api/ai/face-enrollments/{enrollmentId}/result",
+            key,
+            ct);
+
+        var entity = await db.FaceEnrollmentsSet.FirstAsync(
+            x => x.Id == enrollmentId && x.StudentId == studentId, ct);
+        entity.Status = "PROCESSING";
+        entity.FailureReason = null;
+        db.Update(entity);
+        await db.SaveChangesAsync(ct);
+
+        try
+        {
+            var response = await ai.StartFaceEnrollmentAsync(manifest, ct);
+            await audit.WriteAsync(
+                UserContext.Id(User),
+                "FACE_ENROLLMENT_PROCESS",
+                "FaceEnrollment",
+                enrollmentId.ToString(),
+                new { response.JobId, response.Status },
+                ct);
+            return Ok(response);
+        }
+        catch
+        {
+            var current = await db.FaceEnrollmentsSet.FirstAsync(
+                x => x.Id == enrollmentId && x.StudentId == studentId, ct);
+            if (current.Status == "PROCESSING")
+            {
+                current.Status = "PENDING_AI";
+                current.FailureReason = "Không khởi động được AI Face Enrollment; có thể thử lại.";
+                db.Update(current);
+                await db.SaveChangesAsync(ct);
+            }
+            throw;
+        }
     }
 
     [HttpPost("{enrollmentId:long}/cancel")]

@@ -12,6 +12,7 @@ class HtbamRuntime:
     def __init__(self, model_dir: Path, device: str = "auto"):
         self.model_dir = Path(model_dir)
         self.device = self._resolve_device(device)
+        self.model_device = torch.device("cpu")
         self.model = None
         self.metadata: dict[str, Any] = {}
         self.error: str | None = None
@@ -36,7 +37,7 @@ class HtbamRuntime:
             return
         try:
             self.metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-            self.model = torch.jit.load(str(model_path), map_location=self.device).eval()
+            self.model = torch.jit.load(str(model_path), map_location=self.model_device).to(self.model_device).eval()
             self.error = None
         except Exception as exc:
             self.model = None
@@ -58,6 +59,7 @@ class HtbamRuntime:
         return {
             "ready": self.ready,
             "device": str(self.device),
+            "classifierDevice": str(self.model_device),
             "modelVersion": self.model_version,
             "error": self.error,
             "modelDir": str(self.model_dir),
@@ -97,13 +99,15 @@ class HtbamRuntime:
             raise ValueError("causal target timestep t must be real")
 
         tensors = (
-            torch.from_numpy(rgb).unsqueeze(0).to(self.device),
-            torch.from_numpy(rgb_q).unsqueeze(0).to(self.device),
-            torch.from_numpy(semantic).unsqueeze(0).to(self.device),
-            torch.from_numpy(semantic_mask).unsqueeze(0).to(self.device),
-            torch.from_numpy(pose).unsqueeze(0).to(self.device),
-            torch.from_numpy(temporal_mask).unsqueeze(0).to(self.device),
+            torch.from_numpy(rgb).unsqueeze(0).to(self.model_device),
+            torch.from_numpy(rgb_q).unsqueeze(0).to(self.model_device),
+            torch.from_numpy(semantic).unsqueeze(0).to(self.model_device),
+            torch.from_numpy(semantic_mask).unsqueeze(0).to(self.model_device),
+            torch.from_numpy(pose).unsqueeze(0).to(self.model_device),
+            torch.from_numpy(temporal_mask).unsqueeze(0).to(self.model_device),
         )
+
+        tensors = tuple(t.to(self.model_device) for t in tensors)
 
         with torch.inference_mode():
             logits = self.model(*tensors)
@@ -119,4 +123,5 @@ class HtbamRuntime:
             "probabilities": {API_LABELS[i]: float(probs[i]) for i in range(min(4, len(probs)))},
             "modelVersion": self.model_version,
             "device": str(self.device),
+            "classifierDevice": str(self.model_device),
         }

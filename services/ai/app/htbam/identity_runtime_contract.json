@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "templateObjectKey": "face-templates/{studentId}/{enrollmentId}/arcface.npy",
+  "templateFormat": "NumPy .npy",
+  "dtype": "float32",
+  "embeddingDimension": 512,
+  "normalization": "L2",
+  "similarity": "cosine via dot product of L2-normalized vectors",
+  "modelFamily": "ArcFace / InsightFace buffalo_l recognition",
+  "autoAssignEnabled": false,
+  "autoAssignReason": "No calibrated roster-specific ArcFace similarity/margin threshold exists in current project source.",
+  "backendBackfillContract": {
+    "unknownAssignment": "UNKNOWN_ONLY",
+    "explicitCorrection": "ALL",
+    "outOfRosterBlocked": true,
+    "duplicateClaimBlocked": true
+  }
+}

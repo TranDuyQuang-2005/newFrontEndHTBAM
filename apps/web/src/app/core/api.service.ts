@@ -38,9 +38,12 @@ export class ApiService {
   sessions(query=''){return this.http.get<Session[]>(`/api/sessions${query?'?'+query:''}`)}
   session(id:number){return this.http.get<any>(`/api/sessions/${id}`)}
   sessionDashboard(id:number){return this.http.get<any>(`/api/sessions/${id}/dashboard`)}
+  sessionAiPreview(id:number){return this.http.get(`/api/sessions/${id}/ai-preview`,{responseType:'blob'})}
+  sessionFastOverlay(id:number,blob:Blob){const f=new FormData();f.append('file',blob,'realtime.jpg');return this.http.post<any>(`/api/sessions/${id}/fast-overlay`,f)}
   createSession(body:any){return this.http.post<any>('/api/sessions',body)}
   updateSession(id:number,body:any){return this.http.put(`/api/sessions/${id}`,body)}
   sessionAction(id:number,action:'start'|'stop'|'cancel'|'retry-finalize'){return this.http.post(`/api/sessions/${id}/${action}`,{})}
+  browserCameraChunk(id:number,blob:Blob,index:number){const f=new FormData();f.append('file',blob,`webcam-${String(index).padStart(6,'0')}.webm`);return this.http.post(`/api/sessions/${id}/browser-camera/chunk`,f)}
   sessionSubstitution(id:number){return this.http.get<any>(`/api/sessions/${id}/substitution`)}
   assignSubstitution(id:number,body:{substituteTeacherId:number;reason:string;note?:string}){return this.http.post(`/api/sessions/${id}/substitution`,body)}
   cancelSubstitution(id:number){return this.http.delete(`/api/sessions/${id}/substitution`)}
@@ -76,4 +79,8 @@ export class ApiService {
   faceUpload(studentId:number,enrollmentId:number,file:File,pose:string){const f=new FormData();f.append('file',file);f.append('capturePose',pose);f.append('sourceType','UPLOAD');return this.http.post(`/api/students/${studentId}/face-enrollments/${enrollmentId}/images`,f)}
   faceSubmit(studentId:number,enrollmentId:number){return this.http.post(`/api/students/${studentId}/face-enrollments/${enrollmentId}/submit`,{})}
   faceProcess(studentId:number,enrollmentId:number){return this.http.post(`/api/students/${studentId}/face-enrollments/${enrollmentId}/process`,{})}
+  facePreview(studentId:number,enrollmentId:number,imageId:number){return this.http.get<{url:string;expiresInSeconds:number}>(`/api/students/${studentId}/face-enrollments/${enrollmentId}/images/${imageId}/preview-url`)}
+  faceDeleteImage(studentId:number,enrollmentId:number,imageId:number){return this.http.delete(`/api/students/${studentId}/face-enrollments/${enrollmentId}/images/${imageId}`)}
+  faceCancel(studentId:number,enrollmentId:number){return this.http.post(`/api/students/${studentId}/face-enrollments/${enrollmentId}/cancel`,{})}
+
 }

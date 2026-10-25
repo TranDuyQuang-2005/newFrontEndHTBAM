@@ -2,4 +2,14 @@ fastapi>=0.116,<1
 uvicorn[standard]>=0.35,<1
 pydantic>=2.11,<3
 httpx>=0.28,<1
-numpy>=1.26,<3
+numpy>=1.26,<2
+pandas>=2.2,<3
+opencv-python-headless>=4.10,<5
+onnxruntime>=1.20,<2
+insightface==0.7.3
+pyyaml>=6,<7
+ultralytics>=8.3,<9
+mediapipe>=0.10,<0.11
+scipy>=1.13,<2
+lapx>=0.5,<1
+python-multipart>=0.0.9,<1

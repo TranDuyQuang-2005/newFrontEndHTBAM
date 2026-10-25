@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore;
 namespace HTBAM.Api.Controllers;
 
 [ApiController, Authorize(Roles = "ADMIN,LECTURER,TECH_AI"), Route("api/sessions")]
-public sealed class SessionsController(AppDbContext db, ISessionService sessions, IConfiguration cfg, IAuditService audit, IHubContext<SessionHub> hub) : ControllerBase
+public sealed class SessionsController(AppDbContext db, ISessionService sessions, IAiClient ai, IConfiguration cfg, IAuditService audit, IHubContext<SessionHub> hub) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult> List([FromQuery] string? status, [FromQuery] long? classSectionId, [FromQuery] DateTime? from, [FromQuery] DateTime? to, CancellationToken ct)
@@ -63,7 +63,16 @@ public sealed class SessionsController(AppDbContext db, ISessionService sessions
         var originalTeacherName = x.OriginalTeacherId == 0 ? x.ClassSection.Teacher.FullName : await db.Teachers.Where(t => t.Id == x.OriginalTeacherId).Select(t => t.FullName).FirstOrDefaultAsync(ct);
         var canOperate = await AccessScope.CanOperateSessionAsync(db, User, id, ct);
         var canManage = await AccessScope.CanManageSessionAsync(db, User, id, ct);
-        return Ok(new { x.Id, x.ClassSectionId, ClassSection = x.ClassSection.Code, Course = x.ClassSection.Course.Name, Teacher = x.ClassSection.Teacher.FullName, OriginalTeacherId = originalTeacherId, OriginalTeacherName = originalTeacherName, ActualTeacherId = substitution?.SubstituteTeacherId ?? originalTeacherId, ActualTeacherName = substitution?.SubstituteTeacherName ?? originalTeacherName, Substitution = substitution, ActiveSubstitution = substitution?.Status == "ACTIVE" ? substitution : null, CanOperate = canOperate, CanManage = canManage, x.RoomId, x.CameraId, x.VideoId, x.AttendancePolicyId, x.ScheduledStart, x.ScheduledEnd, x.StartedAt, x.EndedAt, x.Status, x.AlertProfile, x.LecturerComment, roster });
+        var cameraInfo = x.CameraId is null
+            ? null
+            : await db.CamerasSet.AsNoTracking()
+                .Where(c => c.Id == x.CameraId.Value)
+                .Select(c => new { c.Name, c.RtspUrl })
+                .FirstOrDefaultAsync(ct);
+        var cameraMode = cameraInfo?.RtspUrl.StartsWith("browser://", StringComparison.OrdinalIgnoreCase) == true
+            ? "BROWSER"
+            : x.CameraId is not null ? "RTSP" : null;
+        return Ok(new { x.Id, x.ClassSectionId, ClassSection = x.ClassSection.Code, Course = x.ClassSection.Course.Name, Teacher = x.ClassSection.Teacher.FullName, OriginalTeacherId = originalTeacherId, OriginalTeacherName = originalTeacherName, ActualTeacherId = substitution?.SubstituteTeacherId ?? originalTeacherId, ActualTeacherName = substitution?.SubstituteTeacherName ?? originalTeacherName, Substitution = substitution, ActiveSubstitution = substitution?.Status == "ACTIVE" ? substitution : null, CanOperate = canOperate, CanManage = canManage, x.RoomId, x.CameraId, CameraName = cameraInfo?.Name, CameraMode = cameraMode, x.VideoId, x.AttendancePolicyId, x.ScheduledStart, x.ScheduledEnd, x.StartedAt, x.EndedAt, x.Status, x.AlertProfile, x.LecturerComment, roster });
     }
 
     [HttpPost, Authorize(Roles = "LECTURER")]
@@ -132,6 +141,44 @@ public sealed class SessionsController(AppDbContext db, ISessionService sessions
         return Ok(new { job.Id, job.ExternalJobId, job.Status, job.ModelVersion });
     }
 
+    [HttpPost("{id:long}/browser-camera/chunk"), Authorize(Roles = "LECTURER")]
+    [RequestSizeLimit(100_000_000)]
+    public async Task<ActionResult> BrowserCameraChunk(long id, IFormFile file, CancellationToken ct)
+    {
+        if (!await AccessScope.CanOperateSessionAsync(db, User, id, ct)) return Forbid();
+        if (file is null || file.Length == 0) return BadRequest("Chunk camera rỗng.");
+
+        var session = await db.SessionsSet.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (session is null) return NotFound();
+        if (session.Status != "RUNNING") return Conflict("Buổi học chưa ở trạng thái RUNNING.");
+        if (session.CameraId is null) return BadRequest("Buổi học không dùng camera.");
+
+        var camera = await db.CamerasSet.FirstOrDefaultAsync(x => x.Id == session.CameraId.Value, ct);
+        if (camera is null || !camera.RtspUrl.StartsWith("browser://", StringComparison.OrdinalIgnoreCase))
+            return BadRequest("Buổi học không dùng Camera laptop của trình duyệt.");
+
+        var job = await db.AnalysisJobsSet.AsNoTracking()
+            .Where(x => x.SessionId == id && x.Status == "RUNNING")
+            .OrderByDescending(x => x.Id)
+            .FirstOrDefaultAsync(ct);
+        if (job is null || string.IsNullOrWhiteSpace(job.ExternalJobId))
+            return Conflict("Không tìm thấy AI job đang chạy.");
+
+        await using var stream = file.OpenReadStream();
+        await ai.UploadBrowserChunkAsync(
+            job.ExternalJobId,
+            stream,
+            file.FileName,
+            string.IsNullOrWhiteSpace(file.ContentType) ? "video/webm" : file.ContentType,
+            ct);
+
+        camera.Status = "ONLINE";
+        camera.LastHealthCheckAt = DateTime.UtcNow;
+        camera.LastHealthMessage = "Đang nhận hình ảnh từ camera laptop qua trình duyệt.";
+        await db.SaveChangesAsync(ct);
+        return Accepted(new { queued = true, file.Length });
+    }
+
     [HttpPost("{id:long}/stop"), Authorize(Roles = "LECTURER")]
     public async Task<ActionResult> Stop(long id, CancellationToken ct)
     {
@@ -162,6 +209,43 @@ public sealed class SessionsController(AppDbContext db, ISessionService sessions
         await db.SaveChangesAsync(ct);
         await audit.WriteAsync(UserContext.Id(User), "SESSION_COMMENT", "Session", id.ToString(), null, ct);
         return NoContent();
+    }
+
+
+
+    [HttpPost("{id:long}/fast-overlay")]
+    public async Task<ActionResult> FastOverlay(long id, IFormFile file, CancellationToken ct)
+    {
+        if (!await AccessScope.CanViewSessionAsync(db, User, id, ct)) return Forbid();
+        if (file is null || file.Length == 0) return BadRequest("Thiếu khung hình realtime.");
+        var externalJobId = await db.AnalysisJobsSet.AsNoTracking()
+            .Where(x => x.SessionId == id).OrderByDescending(x => x.Id)
+            .Select(x => x.ExternalJobId).FirstOrDefaultAsync(ct);
+        if (string.IsNullOrWhiteSpace(externalJobId)) return NoContent();
+        await using var stream = file.OpenReadStream();
+        var json = await ai.FastOverlayAsync(externalJobId, stream, file.FileName, file.ContentType, ct);
+        if (string.IsNullOrWhiteSpace(json)) return NoContent();
+        return Content(json, "application/json");
+    }
+
+    [HttpGet("{id:long}/ai-preview")]
+    public async Task<ActionResult> AiPreview(long id, CancellationToken ct)
+    {
+        if (!await AccessScope.CanViewSessionAsync(db, User, id, ct)) return Forbid();
+
+        var externalJobId = await db.AnalysisJobsSet.AsNoTracking()
+            .Where(x => x.SessionId == id)
+            .OrderByDescending(x => x.Id)
+            .Select(x => x.ExternalJobId)
+            .FirstOrDefaultAsync(ct);
+
+        if (string.IsNullOrWhiteSpace(externalJobId)) return NoContent();
+
+        var preview = await ai.GetOverlayPreviewAsync(externalJobId, ct);
+        if (preview is null) return NoContent();
+
+        Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
+        return File(preview.Value.Data, preview.Value.ContentType);
     }
 
     [HttpGet("{id:long}/dashboard")]

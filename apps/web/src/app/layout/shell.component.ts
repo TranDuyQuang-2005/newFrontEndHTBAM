@@ -207,6 +207,7 @@ export class ShellComponent implements OnInit {
 
     if (this.auth.isAdmin()) {
       return (
+        link.to === '/management' ||
         link.to === '/system' ||
         link.to === '/account'
       );

@@ -83,10 +83,24 @@ public sealed class SessionService(IAppDbContext db, IAiClient ai, ISummaryServi
 
         try
         {
-            var sourceType = s.CameraId is not null ? "CAMERA" : "VIDEO";
-            var source = s.CameraId is not null
-                ? (await db.Cameras.Where(x => x.Id == s.CameraId.Value && x.IsActive).Select(x => x.RtspUrl).FirstOrDefaultAsync(ct) ?? throw new InvalidOperationException("Camera không tồn tại/không hoạt động."))
-                : await GetVideoReadUrlAsync(s.VideoId!.Value, ct);
+            string sourceType;
+            string source;
+            if (s.CameraId is not null)
+            {
+                source = await db.Cameras
+                    .Where(x => x.Id == s.CameraId.Value && x.IsActive)
+                    .Select(x => x.RtspUrl)
+                    .FirstOrDefaultAsync(ct)
+                    ?? throw new InvalidOperationException("Camera không tồn tại/không hoạt động.");
+                sourceType = source.StartsWith("browser://", StringComparison.OrdinalIgnoreCase)
+                    ? "BROWSER"
+                    : "CAMERA";
+            }
+            else
+            {
+                sourceType = "VIDEO";
+                source = await GetVideoReadUrlAsync(s.VideoId!.Value, ct);
+            }
 
             AiArtifactUploadTarget? annotatedVideoUpload = null;
             if (capabilities.AnnotatedVideoOutput)
@@ -262,9 +276,22 @@ public sealed class SessionService(IAppDbContext db, IAiClient ai, ISummaryServi
         var s = await db.Sessions.FirstOrDefaultAsync(x => x.Id == sessionId, ct) ?? throw new KeyNotFoundException("Session không tồn tại.");
         var ids = await db.StableIdentities.Where(x => x.SessionId == sessionId && (x.State == "ACTIVE" || x.State == "LOST"))
             .Select(x => new { x.StableId, x.StudentId, x.IdentityStatus, x.IdentityConfidence, x.IdentityMargin, x.State, x.CurrentTrackId, x.LastSeenAt }).ToListAsync(ct);
-        var since = DateTime.UtcNow.AddSeconds(-15);
-        var latestBehaviors = await db.BehaviorEvents.Where(x => x.SessionId == sessionId && x.EndedAt >= since)
-            .OrderByDescending(x => x.EndedAt).ToListAsync(ct);
+        // Browser-camera inference is asynchronous: media timestamps (StartedAt/EndedAt)
+        // can legitimately lag wall-clock time while a chunk is being processed.
+        // For the LIVE dashboard, freshness must therefore be based on when the backend
+        // actually RECEIVED the BEHAVIOR_SEGMENT callback, not the media EndedAt.
+        var since = DateTime.UtcNow.AddSeconds(-60);
+        var recentBehaviorEventIds = db.AiEventReceipts
+            .Where(x => x.SessionId == sessionId
+                && x.EventType == "BEHAVIOR_SEGMENT"
+                && x.ReceivedAt >= since)
+            .Select(x => x.ExternalEventId);
+
+        var latestBehaviors = await db.BehaviorEvents
+            .Where(x => x.SessionId == sessionId
+                && recentBehaviorEventIds.Contains(x.ExternalEventId))
+            .OrderByDescending(x => x.EndedAt)
+            .ToListAsync(ct);
         var currentByStable = latestBehaviors.GroupBy(x => x.StableIdentityId).ToDictionary(g => g.Key, g => g.First());
         var stableEntities = await db.StableIdentities.Where(x => x.SessionId == sessionId && (x.State == "ACTIVE" || x.State == "LOST")).ToListAsync(ct);
         var identityRows = stableEntities.Select(x => new { x.Id, x.StableId, x.StudentId, x.IdentityStatus, x.IdentityConfidence, x.IdentityMargin, x.State, x.CurrentTrackId, x.LastSeenAt, CurrentBehavior = currentByStable.GetValueOrDefault(x.Id)?.Label, BehaviorProbability = currentByStable.GetValueOrDefault(x.Id)?.Probability, ObservationQuality = currentByStable.GetValueOrDefault(x.Id)?.ObservationQuality }).Cast<object>().ToList();
@@ -274,7 +301,7 @@ public sealed class SessionService(IAppDbContext db, IAiClient ai, ISummaryServi
         var cameraHealth = "N/A";
         if (s.CameraId is not null) cameraHealth = await db.Cameras.Where(x => x.Id == s.CameraId).Select(x => x.Status).FirstOrDefaultAsync(ct) ?? "UNKNOWN";
         var aiHealthy = await ai.HealthAsync(ct); var capabilities = aiHealthy ? await ai.CapabilitiesAsync(ct) : new AiCapabilitiesResponse(false,false,false,Array.Empty<string>());
-        return new DashboardSnapshot(sessionId,s.Status,cameraHealth,aiHealthy?"ONLINE":"OFFLINE",capabilities.SessionInference,stableEntities.Count(x=>x.State=="ACTIVE"),stableEntities.Count(x=>x.StudentId!=null),stableEntities.Count(x=>x.StudentId==null),new BehaviorRatios(ratio("FOCUSED"),ratio("DISTRACTED"),ratio("SLEEPY"),ratio("ACTIVE")),stateEvents.Count(x=>x.Label=="SLEEPY"),stateEvents.Count(x=>x.Label=="ACTIVE"),identityRows,alerts.Cast<object>().ToList(),DateTime.UtcNow);
+        return new DashboardSnapshot(sessionId,s.Status,cameraHealth,aiHealthy?"ONLINE":"OFFLINE",capabilities.SessionInference,capabilities.LoadedModels,stableEntities.Count(x=>x.State=="ACTIVE"),stableEntities.Count(x=>x.StudentId!=null),stableEntities.Count(x=>x.StudentId==null),new BehaviorRatios(ratio("FOCUSED"),ratio("DISTRACTED"),ratio("SLEEPY"),ratio("ACTIVE")),stateEvents.Count(x=>x.Label=="SLEEPY"),stateEvents.Count(x=>x.Label=="ACTIVE"),identityRows,alerts.Cast<object>().ToList(),DateTime.UtcNow);
     }
 }
 

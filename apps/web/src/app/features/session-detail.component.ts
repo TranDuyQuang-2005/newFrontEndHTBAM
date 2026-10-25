@@ -1,7 +1,7 @@
-import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, OnDestroy, OnInit, ViewChild, inject, signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { HubConnection, HubConnectionBuilder } from '@microsoft/signalr';
-import { catchError, forkJoin, of } from 'rxjs';
+import { catchError, firstValueFrom, forkJoin, of } from 'rxjs';
 import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
 import { BackButtonComponent, ModalComponent, PageTitleComponent, behaviorText, errorText, fmtDate, statusText } from '../shared/ui';
@@ -35,8 +35,41 @@ import { BackButtonComponent, ModalComponent, PageTitleComponent, behaviorText, 
 
       <div class="dashboard-grid">
         <section class="card" style="min-height:360px">
-          <div class="card-header" style="margin:-20px -20px 18px"><div><h3>Nguồn phân tích</h3><p>{{ session()?.cameraId ? 'Camera trực tiếp' : 'Video tải lên' }}</p></div><span class="badge" [class.warning]="dashboard().cameraHealth !== 'ONLINE'">{{ statusText(dashboard().cameraHealth) }}</span></div>
-          <div class="empty-state"><div><div class="upload-icon">▶</div><strong>Luồng hình ảnh được xử lý bởi dịch vụ AI</strong><span>API hiện tại không cung cấp bản xem trước trực tiếp.</span></div></div>
+          <div class="card-header" style="margin:-20px -20px 18px"><div><h3>Nguồn phân tích</h3><p>{{ isBrowserCamera() ? 'Camera laptop qua trình duyệt' : session()?.cameraId ? 'Camera RTSP' : 'Video tải lên' }}</p></div><span class="badge" [class.warning]="isBrowserCamera() ? browserCameraState() !== 'STREAMING' : dashboard().cameraHealth !== 'ONLINE'">{{ isBrowserCamera() ? browserCameraStateText() : statusText(dashboard().cameraHealth) }}</span></div>
+          @if (isBrowserCamera()) {
+            <div style="display:grid;gap:12px">
+              <!-- HTBAM_REALTIME_CANVAS_OVERLAY -->
+        <div style="position:relative;width:100%;line-height:0">
+          <video #browserPreview autoplay muted playsinline style="width:100%;max-height:430px;background:#0f172a;border-radius:12px;object-fit:contain" [style.display]="cameraViewMode() === 'live' || !aiPreviewUrl() ? 'block' : 'none'"></video>
+          <canvas #realtimeOverlay [style.display]="cameraViewMode() === 'live' ? 'block' : 'none'"
+                  style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;border-radius:12px"></canvas>
+          @if (cameraViewMode() === 'live') {
+            <div style="position:absolute;left:12px;bottom:12px;display:flex;gap:8px;align-items:center;padding:6px 10px;border-radius:999px;background:rgba(15,23,42,.78);color:white;font-size:12px;line-height:1.2;pointer-events:none">
+              <span style="width:7px;height:7px;border-radius:50%;background:#22c55e"></span>
+              LIVE AI · {{ fastOverlayLatencyMs() == null ? 'đang khởi tạo' : fastOverlayLatencyMs() + ' ms' }}
+            </div>
+          }
+        </div>
+        <!-- HTBAM_AI_PREVIEW_UI -->
+        @if (cameraViewMode() === 'ai' && aiPreviewUrl()) {
+          <img [src]="aiPreviewUrl()!" alt="Khung hình AI đã phân tích"
+               style="display:block;width:100%;aspect-ratio:16/9;object-fit:contain;background:#0f172a;border-radius:12px" />
+        }
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px">
+          <button type="button" class="secondary" (click)="cameraViewMode.set('live')">Trực tiếp + AI</button>
+          <button type="button" class="secondary" (click)="cameraViewMode.set('ai')">Khung AI đã xử lý</button>
+          @if (cameraViewMode() === 'ai') {
+            <small style="color:#64748b">{{ aiPreviewUrl() ? 'BBox và nhãn bám đúng khung hình AI đã xử lý.' : 'Đang chờ khung hình AI đầu tiên…' }}</small>
+          }
+        </div>
+
+              @if (browserCameraState() === 'IDLE') { <div class="notice">Bấm <b>Bắt đầu</b> để cấp quyền và mở camera laptop.</div> }
+              @if (browserCameraState() === 'REQUESTING') { <div class="notice">Đang yêu cầu quyền truy cập camera…</div> }
+              @if (browserCameraState() === 'ERROR') { <div class="error-box">{{ browserCameraError() }}</div> }
+            </div>
+          } @else {
+            <div class="empty-state"><div><div class="upload-icon">▶</div><strong>Luồng hình ảnh được xử lý bởi dịch vụ AI</strong><span>Nguồn RTSP/video được AI xử lý ở backend.</span></div></div>
+          }
         </section>
 
         <section class="card">
@@ -45,7 +78,9 @@ import { BackButtonComponent, ModalComponent, PageTitleComponent, behaviorText, 
             <div class="metric-row"><span>{{ metric.label }}</span><div class="progress-track"><div class="progress-value" [style.width.%]="metric.value" [style.background]="metric.color"></div></div><strong>{{ metric.value }}%</strong></div>
           }
           <div class="service-grid" style="grid-template-columns:1fr 1fr;margin-top:22px">
-            <div class="service-card"><span class="status-dot" [style.background]="dashboard().modelReady ? '#16a34a' : '#dc2626'"></span><div><strong>Mô hình</strong><small>{{ dashboard().modelReady ? 'Sẵn sàng' : 'Chưa sẵn sàng' }}</small></div></div>
+            <div class="service-card"><span class="status-dot" [style.background]="modelLoaded('HTBAM-X:') ? '#16a34a' : '#dc2626'"></span><div><strong>HTBAM-X</strong><small>{{ modelLoaded('HTBAM-X:') ? modelName('HTBAM-X:') : 'Chưa tải' }}</small></div></div>
+            <div class="service-card"><span class="status-dot" [style.background]="modelLoaded('ArcFace/') ? '#16a34a' : '#dc2626'"></span><div><strong>ArcFace</strong><small>{{ modelLoaded('ArcFace/') ? modelName('ArcFace/') : 'Chưa tải' }}</small></div></div>
+            <div class="service-card"><span class="status-dot" [style.background]="dashboard().modelReady ? '#16a34a' : '#dc2626'"></span><div><strong>Pipeline buổi học</strong><small>{{ dashboard().modelReady ? 'Sẵn sàng' : 'Chưa sẵn sàng' }}</small></div></div>
             <div class="service-card"><span class="status-dot" [style.background]="dashboard().aiHealth === 'ONLINE' ? '#16a34a' : '#dc2626'"></span><div><strong>Dịch vụ AI</strong><small>{{ statusText(dashboard().aiHealth) }}</small></div></div>
           </div>
         </section>
@@ -82,11 +117,19 @@ import { BackButtonComponent, ModalComponent, PageTitleComponent, behaviorText, 
   `,
 })
 export class SessionDetailComponent implements OnInit, OnDestroy {
+  @ViewChild('browserPreview') browserPreview?: ElementRef<HTMLVideoElement>;
+  @ViewChild('realtimeOverlay') private realtimeOverlay?: ElementRef<HTMLCanvasElement>;
   private readonly route = inject(ActivatedRoute);
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
   private connection: HubConnection | null = null;
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private browserStream: MediaStream | null = null;
+  private browserRecorder: MediaRecorder | null = null;
+  private browserRecorderTimer: ReturnType<typeof setTimeout> | null = null;
+  private browserCaptureActive = false;
+  private browserChunkIndex = 0;
+  private browserUploadChain: Promise<void> = Promise.resolve();
   readonly sessionId = Number(this.route.snapshot.paramMap.get('id'));
   readonly session = signal<any>(null);
   readonly dashboard = signal<any>(null);
@@ -97,17 +140,31 @@ export class SessionDetailComponent implements OnInit, OnDestroy {
   readonly loading = signal(false);
   readonly acting = signal(false);
   readonly realtimeState = signal<'CONNECTING' | 'ONLINE' | 'OFFLINE'>('CONNECTING');
+  readonly cameraViewMode = signal<'live' | 'ai'>('live');
+  readonly aiPreviewUrl = signal<string | null>(null);
+  readonly fastOverlayLatencyMs = signal<number | null>(null);
+  readonly fastOverlayPeople = signal(0);
+  private fastOverlayTimer: ReturnType<typeof setInterval> | null = null;
+  private fastOverlayBusy = false;
+  private readonly fastOverlayCapture = document.createElement('canvas');
+  readonly browserCameraState = signal<'IDLE' | 'REQUESTING' | 'STREAMING' | 'ERROR'>('IDLE');
+  readonly browserCameraError = signal('');
   readonly pendingAction = signal<'start' | 'stop' | 'cancel' | 'retry-finalize' | null>(null);
   readonly date = fmtDate;
   readonly statusText = statusText;
 
   ngOnInit(): void {
+    this.startFastOverlayLoop();
     this.load();
     void this.connectRealtime();
   }
 
   ngOnDestroy(): void {
+    if (this.fastOverlayTimer) clearInterval(this.fastOverlayTimer);
+    const currentPreview = this.aiPreviewUrl();
+    if (currentPreview) URL.revokeObjectURL(currentPreview);
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
+    void this.stopBrowserCapture(false);
     if (this.connection) {
       void this.connection.invoke('LeaveSession', this.sessionId).catch(() => undefined);
       void this.connection.stop();
@@ -126,14 +183,43 @@ export class SessionDetailComponent implements OnInit, OnDestroy {
     });
   }
   requestAction(action: 'start' | 'stop' | 'cancel' | 'retry-finalize'): void { this.pendingAction.set(action); }
-  confirmAction(): void {
+  async confirmAction(): Promise<void> {
     const action = this.pendingAction();
     if (!action) return;
+
     this.acting.set(true);
-    this.api.sessionAction(this.sessionId, action).subscribe({
-      next: () => { this.acting.set(false); this.pendingAction.set(null); this.message.set('Đã cập nhật trạng thái buổi học.'); this.load(); },
-      error: (error) => { this.error.set(errorText(error)); this.acting.set(false); },
-    });
+    this.error.set('');
+    try {
+      if (action === 'start' && this.isBrowserCamera()) {
+        await this.ensureBrowserCamera();
+      }
+
+      if (action === 'stop' && this.isBrowserCamera()) {
+        await this.stopBrowserCapture(true);
+      }
+
+      await firstValueFrom(this.api.sessionAction(this.sessionId, action));
+
+      if (action === 'start' && this.isBrowserCamera()) {
+        this.browserCaptureActive = true;
+        this.startBrowserRecorderCycle();
+      }
+
+      this.pendingAction.set(null);
+      this.message.set(
+        action === 'start' && this.isBrowserCamera()
+          ? 'Buổi học đã bắt đầu. Camera laptop đang truyền hình ảnh tới AI.'
+          : 'Đã cập nhật trạng thái buổi học.'
+      );
+      this.load();
+    } catch (error) {
+      if (action === 'start' && this.isBrowserCamera()) {
+        await this.stopBrowserCapture(false);
+      }
+      this.error.set(errorText(error));
+    } finally {
+      this.acting.set(false);
+    }
   }
   sessionSubtitle(): string { const item = this.session(); return item ? `${item.course || ''} · ${item.teacher || ''} · ${fmtDate(item.scheduledStart)}` : 'Bảng theo dõi buổi học và kết quả phân tích'; }
   behaviorMetrics(): Array<{ label: string; value: number; color: string }> {
@@ -148,9 +234,222 @@ export class SessionDetailComponent implements OnInit, OnDestroy {
   ratio(value: unknown): number { return Math.round(Number(value ?? 0) * 100); }
   percent(value: unknown): string { return value == null ? '—' : `${this.ratio(value)}%`; }
   behaviorLabel(value: string | null | undefined): string { return behaviorText(value); }
+  isBrowserCamera(): boolean { return this.session()?.cameraMode === 'BROWSER'; }
+  browserCameraStateText(): string {
+    return ({ IDLE: 'Chưa mở', REQUESTING: 'Đang xin quyền', STREAMING: 'Đang truyền', ERROR: 'Lỗi camera' } as const)[this.browserCameraState()];
+  }
+
+  private async ensureBrowserCamera(): Promise<void> {
+    if (this.browserStream?.active) return;
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error('Trình duyệt không hỗ trợ truy cập camera.');
+    }
+
+    this.browserCameraState.set('REQUESTING');
+    this.browserCameraError.set('');
+    try {
+      this.browserStream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 30, max: 30 },
+          facingMode: 'user',
+        },
+        audio: false,
+      });
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      if (this.browserPreview?.nativeElement) {
+        this.browserPreview.nativeElement.srcObject = this.browserStream;
+        await this.browserPreview.nativeElement.play().catch(() => undefined);
+      }
+      this.browserCameraState.set('STREAMING');
+    } catch (error: any) {
+      this.browserCameraState.set('ERROR');
+      const message = error?.name === 'NotAllowedError'
+        ? 'Bạn chưa cấp quyền sử dụng camera cho trình duyệt.'
+        : error?.name === 'NotFoundError'
+          ? 'Không tìm thấy camera laptop.'
+          : `Không mở được camera: ${error?.message ?? error}`;
+      this.browserCameraError.set(message);
+      throw new Error(message);
+    }
+  }
+
+  private recorderMimeType(): string {
+    const options = ['video/webm;codecs=vp8', 'video/webm;codecs=vp9', 'video/webm'];
+    return options.find((x) => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(x)) ?? '';
+  }
+
+  private startBrowserRecorderCycle(): void {
+    if (!this.browserCaptureActive || !this.browserStream?.active) return;
+    if (this.browserRecorder?.state === 'recording') return;
+
+    const chunks: BlobPart[] = [];
+    const mimeType = this.recorderMimeType();
+    const recorder = mimeType
+      ? new MediaRecorder(this.browserStream, { mimeType, videoBitsPerSecond: 2_500_000 })
+      : new MediaRecorder(this.browserStream, { videoBitsPerSecond: 2_500_000 });
+    this.browserRecorder = recorder;
+
+    recorder.ondataavailable = (event) => {
+      if (event.data && event.data.size > 0) chunks.push(event.data);
+    };
+
+    recorder.onerror = (event: any) => {
+      this.browserCameraState.set('ERROR');
+      this.browserCameraError.set(`Lỗi ghi camera: ${event?.error?.message ?? 'không xác định'}`);
+    };
+
+    recorder.onstop = () => {
+      if (this.browserRecorderTimer) {
+        clearTimeout(this.browserRecorderTimer);
+        this.browserRecorderTimer = null;
+      }
+      const blob = new Blob(chunks, { type: recorder.mimeType || 'video/webm' });
+      if (blob.size > 0) this.enqueueBrowserChunk(blob);
+      this.browserRecorder = null;
+      if (this.browserCaptureActive && this.browserStream?.active) {
+        this.startBrowserRecorderCycle();
+      }
+    };
+
+    recorder.start();
+    this.browserCameraState.set('STREAMING');
+    this.browserRecorderTimer = setTimeout(() => {
+      if (recorder.state === 'recording') recorder.stop();
+    }, 12_000);
+  }
+
+  private enqueueBrowserChunk(blob: Blob): void {
+    const index = this.browserChunkIndex++;
+    this.browserUploadChain = this.browserUploadChain
+      .then(async () => {
+        await firstValueFrom(this.api.browserCameraChunk(this.sessionId, blob, index));
+      })
+      .catch((error) => {
+        this.browserCameraState.set('ERROR');
+        this.browserCameraError.set(`Không gửi được hình ảnh tới AI: ${errorText(error)}`);
+      });
+  }
+
+  private async stopBrowserCapture(flush: boolean): Promise<void> {
+    this.browserCaptureActive = false;
+    if (this.browserRecorderTimer) {
+      clearTimeout(this.browserRecorderTimer);
+      this.browserRecorderTimer = null;
+    }
+
+    if (this.browserRecorder && this.browserRecorder.state !== 'inactive') {
+      await new Promise<void>((resolve) => {
+        const recorder = this.browserRecorder!;
+        const previous = recorder.onstop;
+        recorder.onstop = (event) => {
+          if (previous) previous.call(recorder, event);
+          resolve();
+        };
+        recorder.stop();
+      });
+    }
+
+    if (flush) await this.browserUploadChain.catch(() => undefined);
+
+    this.browserStream?.getTracks().forEach((track) => track.stop());
+    this.browserStream = null;
+    if (this.browserPreview?.nativeElement) this.browserPreview.nativeElement.srcObject = null;
+    this.browserCameraState.set('IDLE');
+  }
+
+  modelLoaded(prefix: string): boolean { return (this.dashboard()?.loadedModels ?? []).some((x: string) => x.startsWith(prefix)); }
+  modelName(prefix: string): string { return (this.dashboard()?.loadedModels ?? []).find((x: string) => x.startsWith(prefix)) ?? 'Đã tải'; }
   realtimeLabel(): string { return ({ CONNECTING: 'Đang kết nối realtime', ONLINE: 'Realtime trực tuyến', OFFLINE: 'Realtime gián đoạn' } as const)[this.realtimeState()]; }
   actionTitle(): string { return this.pendingAction() === 'start' ? 'Bắt đầu buổi học' : 'Kết thúc buổi học'; }
   actionMessage(): string { return this.pendingAction() === 'start' ? 'Bắt đầu luồng phân tích AI cho buổi học này?' : 'Kết thúc buổi học và tiến hành tổng hợp dữ liệu?'; }
+
+  private startFastOverlayLoop(): void {
+    if (this.fastOverlayTimer) return;
+    this.fastOverlayTimer = setInterval(() => this.captureFastOverlay(), 500);
+  }
+
+  private captureFastOverlay(): void {
+    if (this.fastOverlayBusy || this.cameraViewMode() !== 'live') return;
+    if (this.session()?.status !== 'RUNNING') { this.clearRealtimeOverlay(); return; }
+    const video = this.browserPreview?.nativeElement;
+    if (!video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !video.videoWidth || !video.videoHeight) return;
+    const scale = Math.min(1, 960 / video.videoWidth);
+    const width = Math.max(2, Math.round(video.videoWidth * scale));
+    const height = Math.max(2, Math.round(video.videoHeight * scale));
+    const capture = this.fastOverlayCapture;
+    capture.width = width; capture.height = height;
+    const ctx = capture.getContext('2d', { alpha: false });
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0, width, height);
+    this.fastOverlayBusy = true;
+    capture.toBlob((blob) => {
+      if (!blob) { this.fastOverlayBusy = false; return; }
+      this.api.sessionFastOverlay(this.sessionId, blob).subscribe({
+        next: (result) => {
+          this.fastOverlayBusy = false;
+          if (!result || result.busy) return;
+          this.fastOverlayLatencyMs.set(Math.round(Number(result.processingMs ?? 0)));
+          this.fastOverlayPeople.set(Array.isArray(result.detections) ? result.detections.length : 0);
+          this.drawRealtimeOverlay(result);
+        },
+        error: () => { this.fastOverlayBusy = false; },
+      });
+    }, 'image/jpeg', 0.72);
+  }
+
+  private drawRealtimeOverlay(result: any): void {
+    const video = this.browserPreview?.nativeElement;
+    const canvas = this.realtimeOverlay?.nativeElement;
+    if (!video || !canvas) return;
+    const rect = video.getBoundingClientRect();
+    const cw = Math.max(1, rect.width), ch = Math.max(1, rect.height);
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    canvas.width = Math.round(cw * dpr); canvas.height = Math.round(ch * dpr);
+    const ctx = canvas.getContext('2d'); if (!ctx) return;
+    ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,cw,ch);
+    const sw = Math.max(1, Number(result.frameWidth || video.videoWidth || 1));
+    const sh = Math.max(1, Number(result.frameHeight || video.videoHeight || 1));
+    const fit = Math.min(cw/sw, ch/sh), iw = sw*fit, ih = sh*fit;
+    const ox = (cw-iw)/2, oy = (ch-ih)/2;
+    const colors:Record<string,string>={FOCUSED:'#16a34a',DISTRACTED:'#f59e0b',SLEEPY:'#dc2626',ACTIVE:'#2563eb',OUT_OF_VIEW:'#64748b'};
+    for (const d of result.detections ?? []) {
+      const b=d.bbox; if(!Array.isArray(b)||b.length!==4) continue;
+      const x=ox+Number(b[0])*iw,y=oy+Number(b[1])*ih,w=(Number(b[2])-Number(b[0]))*iw,h=(Number(b[3])-Number(b[1]))*ih;
+      if(w<=1||h<=1) continue;
+      const stable=d.stableId as string|null;
+      const row=stable?(this.dashboard()?.identities??[]).find((r:any)=>r.stableId===stable):null;
+      const behavior=String(d.behavior??row?.currentBehavior??'').toUpperCase();
+      const prob=d.behaviorProbability??row?.behaviorProbability??null;
+      const color=colors[behavior]??'#22c55e';
+      const identity=d.studentId?`SV#${d.studentId}`:stable||`LIVE-T${d.trackId??'?'}`;
+      const name=behavior?this.behaviorLabel(behavior):'Đang theo dõi';
+      const label=`${identity} · ${name}${prob==null?'':` · ${Math.round(Number(prob)*100)}%`}`;
+      ctx.strokeStyle=color;ctx.lineWidth=2.5;ctx.strokeRect(x,y,w,h);
+      ctx.font='600 13px Inter, Arial, sans-serif';const tw=ctx.measureText(label).width,lh=25,ly=Math.max(0,y-lh);
+      ctx.fillStyle=color;ctx.fillRect(x,ly,Math.min(cw-x,tw+16),lh);ctx.fillStyle='#fff';ctx.textBaseline='middle';ctx.fillText(label,x+8,ly+lh/2);
+    }
+  }
+
+  private clearRealtimeOverlay(): void {
+    const canvas=this.realtimeOverlay?.nativeElement;if(!canvas)return;
+    const ctx=canvas.getContext('2d');if(ctx)ctx.clearRect(0,0,canvas.width,canvas.height);
+    this.fastOverlayLatencyMs.set(null);this.fastOverlayPeople.set(0);
+  }
+
+  private refreshAiPreview(): void {
+    this.api.sessionAiPreview(this.sessionId).subscribe({
+      next: (blob) => {
+        if (!blob || blob.size === 0) return;
+        const nextUrl = URL.createObjectURL(blob);
+        const previous = this.aiPreviewUrl();
+        this.aiPreviewUrl.set(nextUrl);
+        if (previous) URL.revokeObjectURL(previous);
+      },
+      error: () => undefined,
+    });
+  }
 
   private async connectRealtime(): Promise<void> {
     this.connection = new HubConnectionBuilder()
@@ -182,6 +481,7 @@ export class SessionDetailComponent implements OnInit, OnDestroy {
     this.refreshTimer = setTimeout(() => {
       this.refreshTimer = null;
       this.load();
+      this.refreshAiPreview();
     }, 500);
   }
 }

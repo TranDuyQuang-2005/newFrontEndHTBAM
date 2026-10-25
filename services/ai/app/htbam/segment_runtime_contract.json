@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "sourceSha256": {
+    "behavior_cache.py": "3aa17cfccb7f4d5081b58cad234cbb4bd5d1712ff07ecf7a47bc105abf572791",
+    "dataset.py": "f51c3f5b0ef00b606c96f846279e0ff360db21f0187c6fefb598d3b168e286e5",
+    "model.py": "e19a3c5aed621d0bdf26d9aacf13859ed19f9479a50b3ae5910ea66338f68edd"
+  },
+  "semanticNames": [
+    "ear",
+    "eye_open",
+    "mar",
+    "pitch",
+    "yaw",
+    "roll",
+    "gaze_away",
+    "hand_up",
+    "phone_use",
+    "posture_upright",
+    "motion",
+    "face_visible",
+    "face_quality",
+    "pose_quality"
+  ],
+  "kineticsMean": [
+    0.45,
+    0.45,
+    0.45
+  ],
+  "kineticsStd": [
+    0.225,
+    0.225,
+    0.225
+  ],
+  "semanticScales": [
+    [
+      "ear",
+      0.5
+    ],
+    [
+      "mar",
+      0.8
+    ],
+    [
+      "pitch",
+      60.0
+    ],
+    [
+      "yaw",
+      60.0
+    ],
+    [
+      "roll",
+      60.0
+    ]
+  ],
+  "framesPerSegment": 16,
+  "cropSize": 224,
+  "contextSegments": 3,
+  "backbone": "mvit_v2_s",
+  "weights": "KINETICS400_V1",
+  "leftPadMasks": [
+    [
+      0,
+      0,
+      1
+    ],
+    [
+      0,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1
+    ]
+  ],
+  "runtimeImportBoundary": {
+    "offlineDatasetImported": false,
+    "behaviorCacheImported": false,
+    "opencvRequiredForSegmentCore": false,
+    "normalizationImplementation": "local exact copy of BehaviorWindowDataset._normalize_video"
+  }
+}

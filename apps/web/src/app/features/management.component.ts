@@ -721,7 +721,7 @@ type Tab =
             </label>
 
             <label class="span2">
-              RTSP URL
+              Nguồn camera
 
               <input
                 [(ngModel)]="
@@ -730,7 +730,7 @@ type Tab =
                 [ngModelOptions]="{
                   standalone: true
                 }"
-                placeholder="rtsp://..."
+                placeholder="rtsp://... hoặc browser://laptop"
               />
             </label>
           }
@@ -1505,7 +1505,7 @@ export class ManagementComponent
         this.form.rtspUrl ?? '',
       ).trim()
     ) {
-      return 'Địa chỉ RTSP là bắt buộc.';
+      return 'Nguồn camera là bắt buộc (RTSP hoặc browser://laptop).';
     }
 
     return null;

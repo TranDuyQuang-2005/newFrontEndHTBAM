@@ -51,7 +51,6 @@ export const routes: Routes = [
       },
       {
         path: 'management',
-        canActivate: [academicGuard],
         loadComponent: () =>
           import('./features/management.component').then(
             (module) => module.ManagementComponent,

@@ -26,12 +26,22 @@ services:
 
   ai:
     build: ../services/ai
+    gpus: all
     environment:
       HTBAM_MODEL_DIR: "/models/htbamx"
       HTBAM_DEVICE: "${HTBAM_DEVICE:-auto}"
-      HTBAM_FULL_SESSION_PIPELINE: "false"
+      HTBAM_FULL_SESSION_PIPELINE: "true"
+      HTBAM_TRAINING_ROOT: "/training"
+      HTBAM_CHUNK_SECONDS: "12"
+      HTBAM_IDENTITY_MIN_SIMILARITY: "0.60"
+      HTBAM_IDENTITY_MIN_MARGIN: "0.10"
+      HTBAM_IDENTITY_MIN_FACE_SAMPLES: "2"
+      HTBAM_UNKNOWN_LINK_SIMILARITY: "0.55"
+      HTBAM_MIN_OBSERVATION: "0.20"
     volumes:
       - "../services/ai/models:/models:ro"
+      - "E:/HTBAM_X_official_incremental_checked:/training:ro"
+      - "E:/HTBAM_X_official_incremental_checked/pretrained/torch-cache:/root/.cache/torch:ro"
     ports:
       - "8001:8001"
     expose:
