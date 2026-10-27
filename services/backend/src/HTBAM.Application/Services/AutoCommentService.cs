@@ -14,19 +14,25 @@ public sealed class AutoCommentService(
         var summary = await db.ClassSessionSummaries.FirstOrDefaultAsync(x => x.SessionId == sessionId, ct);
         if (summary is null) return null;
 
-        var subject = await db.Sessions.Where(x => x.Id == sessionId)
-            .Select(x => new { x.ClassSection.Code, x.ClassSection.Name })
-            .FirstAsync(ct);
-        var attendance = await db.Attendance.Where(x => x.SessionId == sessionId)
-            .GroupBy(_ => 1)
-            .Select(g => new { Score = (decimal?)g.Average(x => x.Score), Present = (int?)g.Sum(x => x.PresentSeconds), Observed = (int?)g.Sum(x => x.ObservedSeconds) })
-            .FirstOrDefaultAsync(ct);
+        var session = await db.Sessions.Where(x => x.Id == sessionId)
+            .Select(x => new { x.StartedAt, x.EndedAt, x.ScheduledStart, x.ScheduledEnd, x.AttendancePolicyId }).FirstAsync(ct);
+        var behaviorEvents = await db.BehaviorEvents.Where(x => x.SessionId == sessionId).ToListAsync(ct);
+        var rangeStart = session.StartedAt ?? session.ScheduledStart;
+        var rangeEnd = session.EndedAt ?? session.ScheduledEnd ?? (behaviorEvents.Count > 0 ? behaviorEvents.Max(x => x.EndedAt) : rangeStart);
+        var behavior = BehaviorSummaryCalculator.Calculate(behaviorEvents, rangeStart, rangeEnd);
+        var attendanceRows = await db.Attendance.Where(x => x.SessionId == sessionId).ToListAsync(ct);
+        var policy = await db.AttendancePolicies.FirstOrDefaultAsync(x => x.Id == session.AttendancePolicyId, ct);
+        var attendanceScore = policy is null ? null : AverageScorePercent(attendanceRows.Select(x => x.Score), policy.PresentScore, policy.PartialScore, policy.AbsentScore);
         var hadComment = !string.IsNullOrWhiteSpace(summary.AutoComment);
         var result = await GenerateWithFallbackAsync(new LlmCommentRequest(
-            "SESSION", sessionId.ToString(), subject.Code,
-            summary.FocusedRatio, summary.DistractedRatio, summary.SleepyRatio, summary.ActiveRatio,
-            summary.AlertCount, summary.CameraAiQuality, attendance?.Score, attendance?.Present, attendance?.Observed,
-            $"ClassSectionName={subject.Name}; ObservedStudentCount={summary.ObservedStudentCount}"), ct);
+            "SESSION", "STORED_SUMMARY", "Buổi học",
+            behavior.ObservedSeconds > 0 ? behavior.FocusedRatio : summary.FocusedRatio,
+            behavior.ObservedSeconds > 0 ? behavior.DistractedRatio : summary.DistractedRatio,
+            behavior.ObservedSeconds > 0 ? behavior.SleepyRatio : summary.SleepyRatio,
+            behavior.ObservedSeconds > 0 ? behavior.ActiveRatio : summary.ActiveRatio,
+            summary.AlertCount, behavior.ObservedSeconds > 0 ? behavior.ObservationQuality : summary.CameraAiQuality,
+            attendanceScore, attendanceRows.Sum(x => x.PresentSeconds), attendanceRows.Sum(x => x.ObservedSeconds),
+            $"ObservedIdentityCount={(behavior.ObservedSeconds > 0 ? behavior.ObservedIdentityCount : summary.ObservedStudentCount)}"), ct);
 
         summary.AutoComment = result.Text;
         summary.AutoCommentProvider = ProviderStorageValue(result);
@@ -42,14 +48,21 @@ public sealed class AutoCommentService(
         var summary = await db.StudentSessionSummaries.FirstOrDefaultAsync(x => x.SessionId == sessionId && x.StudentId == studentId, ct);
         if (summary is null) return null;
 
-        var studentCode = await db.Students.Where(x => x.Id == studentId).Select(x => x.StudentCode).FirstAsync(ct);
+        var trustedIdentity = await db.StableIdentities.AnyAsync(x => x.SessionId == sessionId && x.StudentId == studentId && x.IdentityStatus == "IDENTIFIED", ct);
+        if (!trustedIdentity) return null;
         var attendance = await db.Attendance.FirstOrDefaultAsync(x => x.SessionId == sessionId && x.StudentId == studentId, ct);
+        if (attendance is null || attendance.ObservedSeconds <= 0) return null;
+        var studentEvents = await db.BehaviorEvents.Where(x => x.SessionId == sessionId && x.StudentId == studentId).ToListAsync(ct);
+        if (!studentEvents.Any(BehaviorSummaryCalculator.IsValidState)) return null;
+        var attendancePolicyId = await db.Sessions.Where(x => x.Id == sessionId).Select(x => x.AttendancePolicyId).FirstAsync(ct);
+        var policy = await db.AttendancePolicies.FirstOrDefaultAsync(x => x.Id == attendancePolicyId, ct);
+        decimal? attendanceScore = policy is null ? null : ScorePercent(attendance.Score, policy.PresentScore, policy.PartialScore, policy.AbsentScore);
         var hadComment = !string.IsNullOrWhiteSpace(summary.AutoComment);
         var result = await GenerateWithFallbackAsync(new LlmCommentRequest(
-            "STUDENT", studentId.ToString(), studentCode,
+            "STUDENT", "STORED_SUMMARY", "Sinh viên trong buổi học",
             summary.FocusedRatio, summary.DistractedRatio, summary.SleepyRatio, summary.ActiveRatio,
-            summary.AlertCount, summary.ObservationQuality, attendance?.Score, attendance?.PresentSeconds, attendance?.ObservedSeconds,
-            $"SessionId={sessionId}"), ct);
+            summary.AlertCount, summary.ObservationQuality, attendanceScore, attendance.PresentSeconds, attendance.ObservedSeconds,
+            null), ct);
 
         summary.AutoComment = result.Text;
         summary.AutoCommentProvider = ProviderStorageValue(result);
@@ -65,7 +78,9 @@ public sealed class AutoCommentService(
         var classSection = await db.ClassSections.FirstOrDefaultAsync(x => x.Id == classSectionId, ct);
         if (classSection is null) return null;
 
-        var sessionIds = db.Sessions.Where(x => x.ClassSectionId == classSectionId && x.Status == "COMPLETED").Select(x => x.Id);
+        var sessions = await db.Sessions.Where(x => x.ClassSectionId == classSectionId && x.Status == "COMPLETED")
+            .Select(x => new { x.Id, x.StartedAt, x.EndedAt, x.ScheduledStart, x.ScheduledEnd }).ToListAsync(ct);
+        var sessionIds = sessions.Select(x => x.Id).ToArray();
         var aggregate = await db.ClassSessionSummaries.Where(x => sessionIds.Contains(x.SessionId))
             .GroupBy(_ => 1)
             .Select(g => new
@@ -80,15 +95,31 @@ public sealed class AutoCommentService(
             }).FirstOrDefaultAsync(ct);
         if (aggregate is null) return null;
 
+        var behaviorEvents = await db.BehaviorEvents.Where(x => sessionIds.Contains(x.SessionId)).ToListAsync(ct);
+        var eventSummaries = sessions.Select(session =>
+        {
+            var events = behaviorEvents.Where(x => x.SessionId == session.Id).ToList();
+            var start = session.StartedAt ?? session.ScheduledStart;
+            var end = session.EndedAt ?? session.ScheduledEnd ?? (events.Count > 0 ? events.Max(x => x.EndedAt) : start);
+            return BehaviorSummaryCalculator.Calculate(events, start, end);
+        }).Where(x => x.ObservedSeconds > 0).ToList();
+        var eventSeconds = eventSummaries.Sum(x => x.ObservedSeconds);
+        decimal Effective(Func<StoredBehaviorSummary, decimal> selector, decimal persisted) =>
+            eventSeconds <= 0 ? persisted : eventSummaries.Sum(x => selector(x) * x.ObservedSeconds) / eventSeconds;
+        var alertCount = await db.Alerts.CountAsync(x => sessionIds.Contains(x.SessionId), ct);
+
         var attendance = await db.Attendance.Where(x => sessionIds.Contains(x.SessionId))
-            .GroupBy(_ => 1)
-            .Select(g => new { Score = (decimal?)g.Average(x => x.Score), Present = (int?)g.Sum(x => x.PresentSeconds), Observed = (int?)g.Sum(x => x.ObservedSeconds) })
-            .FirstOrDefaultAsync(ct);
+            .Join(db.Sessions, row => row.SessionId, session => session.Id, (row, session) => new { Row = row, session.AttendancePolicyId })
+            .Join(db.AttendancePolicies, row => row.AttendancePolicyId, policy => policy.Id,
+                (row, policy) => new { row.Row.Score, row.Row.PresentSeconds, row.Row.ObservedSeconds, policy.PresentScore, policy.PartialScore, policy.AbsentScore })
+            .ToListAsync(ct);
+        var attendanceScore = attendance.Count == 0 ? null : (decimal?)attendance.Average(x => ScorePercent(x.Score, x.PresentScore, x.PartialScore, x.AbsentScore));
         var hadComment = !string.IsNullOrWhiteSpace(classSection.AutoComment);
         var result = await GenerateWithFallbackAsync(new LlmCommentRequest(
-            "CLASS_SECTION", classSectionId.ToString(), classSection.Code,
-            aggregate.Focused, aggregate.Distracted, aggregate.Sleepy, aggregate.Active,
-            aggregate.Alerts, aggregate.Quality, attendance?.Score, attendance?.Present, attendance?.Observed,
+            "CLASS_SECTION", "STORED_SUMMARY", "Lớp học phần",
+            Effective(x => x.FocusedRatio, aggregate.Focused), Effective(x => x.DistractedRatio, aggregate.Distracted),
+            Effective(x => x.SleepyRatio, aggregate.Sleepy), Effective(x => x.ActiveRatio, aggregate.Active),
+            alertCount, Effective(x => x.ObservationQuality, aggregate.Quality), attendanceScore, attendance.Sum(x => x.PresentSeconds), attendance.Sum(x => x.ObservedSeconds),
             $"SessionCount={aggregate.Sessions}"), ct);
 
         classSection.AutoComment = result.Text;
@@ -165,4 +196,16 @@ public sealed class AutoCommentService(
 
     private static string ProviderStorageValue(LlmGenerationResult result) =>
         result.IsFallback ? "RULE_BASED_FALLBACK" : $"{result.Provider}:{result.Model}";
+
+    private static decimal? AverageScorePercent(IEnumerable<decimal> scores, decimal present, decimal partial, decimal absent)
+    {
+        var values = scores.ToList();
+        return values.Count == 0 ? null : values.Average(x => ScorePercent(x, present, partial, absent));
+    }
+
+    private static decimal ScorePercent(decimal score, decimal present, decimal partial, decimal absent)
+    {
+        var maximum = Math.Max(present, Math.Max(partial, absent));
+        return maximum <= 0 ? 0 : Math.Clamp(score / maximum * 100m, 0m, 100m);
+    }
 }

@@ -23,7 +23,7 @@ import { ModalComponent, PageTitleComponent, RowActionMenuComponent, errorText, 
     @if (loading()) { <div class="notice">Đang tải danh sách buổi học…</div> }
 
     <div class="filter-bar">
-      <label class="grow">Tìm buổi học<input [(ngModel)]="search" placeholder="ID hoặc lớp học phần" /></label>
+      <label class="grow">Tìm buổi học<input [(ngModel)]="search" placeholder="Tên lớp học phần" /></label>
       <label>Trạng thái
         <select [(ngModel)]="statusFilter" (ngModelChange)="page=1;reloadSessions()">
           <option value="">Tất cả</option>
@@ -40,11 +40,11 @@ import { ModalComponent, PageTitleComponent, RowActionMenuComponent, errorText, 
     <section class="card table-card">
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Buổi học</th><th>Lớp học phần</th><th>Giảng viên</th><th>Nguồn</th><th>Thời gian</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+          <thead><tr><th>Nguồn tạo</th><th>Lớp học phần</th><th>Giảng viên</th><th>Nguồn dữ liệu</th><th>Thời gian</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
           <tbody>
             @for (session of filteredItems(); track session.id) {
               <tr>
-                <td class="cell-title">#{{ session.id }}<small>{{ session.classScheduleId ? 'Theo lịch lớp' : 'Tạo thủ công' }}</small></td>
+                <td class="cell-title">{{ session.classScheduleId ? 'Theo lịch lớp' : 'Tạo thủ công' }}</td>
                 <td>{{ sectionLabel(session.classSectionId) }}</td>
                 <td>
                   <div>Giảng viên phụ trách: {{ session.originalTeacherName || '-' }}</div>
@@ -94,13 +94,13 @@ import { ModalComponent, PageTitleComponent, RowActionMenuComponent, errorText, 
 
     @if (sourceSession()) {
       <app-modal title="Nguồn phân tích buổi học" [busy]="sourceSaving()" size="md" (close)="closeSource()">
-        <p>Buổi #{{ sourceSession()!.id }} · {{ date(sourceSession()!.scheduledStart) }}</p>
-        @if (sourceSession()!.classScheduleId) { <p class="notice">Ngày, tiết, giờ và phòng được quản lý tại lịch lớp học phần. Chọn nguồn không tự khởi chạy camera hoặc AI.</p> }
+        <p>{{ sectionLabel(sourceSession()!.classSectionId) }} · {{ date(sourceSession()!.scheduledStart) }}</p>
+        @if (sourceSession()!.classScheduleId) { <p class="notice">Ngày, tiết, giờ và phòng được quản lý tại lịch lớp học phần. Việc chọn nguồn không tự bắt đầu phân tích.</p> }
         @if (sourceError()) { <div class="error-box">{{ sourceError() }}</div> }
         <form class="form-grid" (ngSubmit)="saveSource()">
           <label>Nguồn dữ liệu <span class="required">*</span><select name="sourceType" [(ngModel)]="sourceForm.type"><option value="camera">Camera</option><option value="video">Video</option></select></label>
           @if (sourceForm.type === 'camera') {
-            <label>Camera <span class="required">*</span><select name="sourceCamera" [(ngModel)]="sourceForm.cameraId"><option [ngValue]="null">-- Chọn camera --</option>@for (camera of camerasForSession(sourceSession()!); track camera.id) { <option [ngValue]="camera.id">{{ camera.code }} - {{ camera.name }}{{ camera.sourceMode === 'BROWSER' ? ' · BROWSER' : ' · RTSP' }}</option> }</select></label>
+            <label>Camera <span class="required">*</span><select name="sourceCamera" [(ngModel)]="sourceForm.cameraId"><option [ngValue]="null">-- Chọn camera --</option>@for (camera of camerasForSession(sourceSession()!); track camera.id) { <option [ngValue]="camera.id">{{ camera.code }} - {{ camera.name }}{{ camera.sourceMode === 'BROWSER' ? ' · Camera trên thiết bị' : ' · Camera phòng học' }}</option> }</select></label>
           } @else {
             <label>Video <span class="required">*</span><select name="sourceVideo" [(ngModel)]="sourceForm.videoId"><option [ngValue]="null">-- Chọn video --</option>@for (video of readyVideos(); track video.id) { <option [ngValue]="video.id">{{ video.fileName }}</option> }</select></label>
           }
@@ -111,7 +111,7 @@ import { ModalComponent, PageTitleComponent, RowActionMenuComponent, errorText, 
 
     @if (substitutionSession()) {
       <app-modal title="Phân công dạy thay" [busy]="substitutionSaving()" size="md" (close)="closeSubstitution()">
-        <p>Buổi học #{{ substitutionSession()!.id }}</p>
+        <p>{{ sectionLabel(substitutionSession()!.classSectionId) }} · {{ date(substitutionSession()!.scheduledStart) }}</p>
         @if (substitutionError()) { <div class="error-box">{{ substitutionError() }}</div> }
         <div class="form-grid"><label>Giảng viên dạy thay <span class="required">*</span><select [(ngModel)]="substitutionForm.teacherId"><option [ngValue]="null">-- Chọn giảng viên --</option>@for (teacher of teachers(); track teacher.id) { <option [ngValue]="teacher.id">{{ teacher.teacherCode }} - {{ teacher.fullName }}</option> }</select></label><label>Lý do <span class="required">*</span><input [(ngModel)]="substitutionForm.reason" /></label><label class="span2">Ghi chú<textarea [(ngModel)]="substitutionForm.note" rows="3"></textarea></label></div>
         <div class="modal-footer" style="margin:20px -20px -20px"><button type="button" class="secondary" [disabled]="substitutionSaving()" (click)="closeSubstitution()">Hủy</button><button type="button" [disabled]="substitutionSaving()" (click)="saveSubstitution()">{{ substitutionSaving() ? 'Đang lưu…' : 'Lưu phân công' }}</button></div>
@@ -121,7 +121,7 @@ import { ModalComponent, PageTitleComponent, RowActionMenuComponent, errorText, 
     @if (pendingCancellation()) {
       <app-modal [title]="pendingCancellation()?.type === 'session' ? 'Xác nhận hủy buổi học' : 'Xác nhận hủy phân công'" [busy]="cancellationSaving()" size="sm" (close)="closeCancellation()">
         @if (cancellationError()) { <div class="error-box">{{ cancellationError() }}</div> }
-        <p>{{ pendingCancellation()?.type === 'session' ? 'Bạn có chắc muốn hủy buổi học' : 'Bạn có chắc muốn hủy phân công dạy thay của buổi học' }} <b>#{{ pendingCancellation()?.session?.id }}</b> không?</p>
+        <p>{{ pendingCancellation()?.type === 'session' ? 'Bạn có chắc muốn hủy buổi học này' : 'Bạn có chắc muốn hủy phân công dạy thay của buổi học này' }} không?</p>
         <div class="modal-footer" style="margin:20px -20px -20px"><button type="button" class="secondary" [disabled]="cancellationSaving()" (click)="closeCancellation()">Không</button><button type="button" class="danger" [disabled]="cancellationSaving()" (click)="confirmCancellation()">{{ cancellationSaving() ? 'Đang xử lý…' : 'Xác nhận hủy' }}</button></div>
       </app-modal>
     }
@@ -182,13 +182,13 @@ export class SessionsComponent implements OnInit {
 
   filteredItems(): Session[] {
     const query = this.search.trim().toLowerCase();
-    return this.items().filter((item) => (!query || String(item.id).includes(query) || this.sectionLabel(item.classSectionId).toLowerCase().includes(query)) && (!this.statusFilter || item.status === this.statusFilter));
+    return this.items().filter((item) => (!query || this.sectionLabel(item.classSectionId).toLowerCase().includes(query)) && (!this.statusFilter || item.status === this.statusFilter));
   }
 
   sourceLabel(session: Session): string {
     if (session.videoId) return 'Video';
     if (!session.cameraId) return 'Chưa chọn nguồn';
-    return this.cameras().find((camera) => camera.id === session.cameraId)?.sourceMode === 'BROWSER' ? 'Camera BROWSER' : 'Camera RTSP';
+    return this.cameras().find((camera) => camera.id === session.cameraId)?.sourceMode === 'BROWSER' ? 'Camera trên thiết bị' : 'Camera phòng học';
   }
   camerasForSession(session: Session): Camera[] { return this.cameras().filter((camera) => !session.roomId || camera.roomId === session.roomId); }
   readyVideos(): Video[] { return this.videos().filter((item) => item.status === 'READY' && item.videoType === 'INPUT_UPLOAD'); }

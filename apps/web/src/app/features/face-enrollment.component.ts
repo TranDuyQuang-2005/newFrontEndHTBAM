@@ -14,7 +14,7 @@ import { BackButtonComponent, ModalComponent, errorText, statusText } from '../s
   <div class="page-title">
     <div>
       <h1>Đăng ký khuôn mặt sinh viên</h1>
-      <p>Tạo mẫu khuôn mặt ArcFace để hệ thống nhận diện sinh viên trong buổi học. Đây là bước đăng ký mẫu, không huấn luyện lại mô hình.</p>
+      <p>Đăng ký ảnh khuôn mặt để hệ thống nhận diện sinh viên trong buổi học.</p>
     </div>
     <div class="actions"><button type="button" [disabled]="busy()" (click)="start()">Tạo lần đăng ký mới</button></div>
   </div>
@@ -35,7 +35,7 @@ import { BackButtonComponent, ModalComponent, errorText, statusText } from '../s
         <h3>Các lần đăng ký</h3>
         @for(enrollment of list();track enrollment.id){
           <button type="button" class="list-button" [class.active]="selectedId()===enrollment.id" (click)="select(enrollment.id)">
-            <span>#{{enrollment.id}} · {{statusLabel(enrollment.status)}}</span>
+            <span>{{statusLabel(enrollment.status)}}</span>
             <small style="margin-left:auto">{{enrollment.uploadedImageCount}} ảnh</small>
           </button>
         } @empty {<p class="empty">Chưa có lần đăng ký.</p>}
@@ -55,22 +55,21 @@ import { BackButtonComponent, ModalComponent, errorText, statusText } from '../s
       <section class="card">
         @if(detail()){
           <div class="card-header" style="margin:-20px -20px 18px">
-            <div><h3>Lần đăng ký #{{detail().enrollment.id}}</h3><p>{{detail().images.length}} ảnh đã tải lên</p></div>
+            <div><h3>Chi tiết lần đăng ký</h3><p>{{detail().images.length}} ảnh đã tải lên</p></div>
             <span class="badge blue">{{statusLabel(detail().enrollment.status)}}</span>
           </div>
 
           @if(detail().template){
             <div class="success-box">
-              <b>Mẫu nhận diện đã sẵn sàng.</b>
-              {{detail().template.modelName}} · {{detail().template.embeddingDimension}}D ·
-              chất lượng {{percent(detail().template.qualityScore)}}
+              <b>Dữ liệu nhận diện đã sẵn sàng.</b>
+              Hệ thống có thể dùng các ảnh đã duyệt để nhận diện sinh viên.
             </div>
           }
           @if(detail().enrollment.failureReason){
             <div class="error-box">{{detail().enrollment.failureReason}}</div>
           }
           @if(detail().enrollment.status==='PROCESSING'){
-            <div class="notice">AI đang kiểm tra chất lượng ảnh và tạo template ArcFace. Trang sẽ tự cập nhật.</div>
+            <div class="notice">Hệ thống đang kiểm tra chất lượng ảnh và tạo dữ liệu nhận diện. Trang sẽ tự cập nhật.</div>
           }
 
           @if(canUpload()){
@@ -113,14 +112,14 @@ import { BackButtonComponent, ModalComponent, errorText, statusText } from '../s
           </div>
 
           <div class="form-actions" style="margin-top:20px">
-            @if(canUpload()){<button type="button" [disabled]="busy()" (click)="submit()">Gửi kiểm tra AI</button>}
-            @if(detail().enrollment.status==='PENDING_AI'){<button type="button" [disabled]="busy()" (click)="process()">Tạo mẫu ArcFace</button>}
+            @if(canUpload()){<button type="button" [disabled]="busy()" (click)="submit()">Gửi kiểm tra ảnh</button>}
+            @if(detail().enrollment.status==='PENDING_AI'){<button type="button" [disabled]="busy()" (click)="process()">Tạo dữ liệu nhận diện</button>}
             @if(['IN_PROGRESS','NEEDS_RETAKE','PENDING_AI'].includes(detail().enrollment.status)){
               <button type="button" class="secondary" [disabled]="busy()" (click)="cancel()">Hủy lần đăng ký</button>
             }
           </div>
         } @else {
-          <div class="empty-state"><div><strong>Chọn hoặc tạo một lần đăng ký</strong><span>Chi tiết ảnh và trạng thái template sẽ xuất hiện tại đây.</span></div></div>
+          <div class="empty-state"><div><strong>Chọn hoặc tạo một lần đăng ký</strong><span>Chi tiết ảnh và trạng thái xử lý sẽ xuất hiện tại đây.</span></div></div>
         }
       </section>
     </main>
@@ -161,7 +160,7 @@ export class FaceEnrollmentComponent implements OnInit{
   canUpload(){const s=this.detail()?.enrollment.status;return s==='IN_PROGRESS'||s==='NEEDS_RETAKE'}
   upload(){const id=this.selectedId();if(!this.file||id===null)return;this.busy.set(true);this.api.faceUpload(this.studentId,id,this.file,this.pose).subscribe({next:()=>{this.file=null;this.busy.set(false);this.select(id)},error:e=>{this.busy.set(false);this.error.set(errorText(e))}})}
   submit(){const id=this.selectedId();if(id===null)return;this.busy.set(true);this.api.faceSubmit(this.studentId,id).subscribe({next:()=>{this.busy.set(false);this.select(id);this.reload()},error:e=>{this.busy.set(false);this.error.set(errorText(e))}})}
-  process(){const id=this.selectedId();if(id===null)return;this.busy.set(true);this.error.set('');this.api.faceProcess(this.studentId,id).subscribe({next:()=>{this.busy.set(false);this.message.set('Đã gửi AI tạo mẫu ArcFace.');this.select(id);this.poll(id,0)},error:e=>{this.busy.set(false);this.error.set(errorText(e))}})}
+  process(){const id=this.selectedId();if(id===null)return;this.busy.set(true);this.error.set('');this.api.faceProcess(this.studentId,id).subscribe({next:()=>{this.busy.set(false);this.message.set('Đã gửi yêu cầu tạo dữ liệu nhận diện.');this.select(id);this.poll(id,0)},error:e=>{this.busy.set(false);this.error.set(errorText(e))}})}
   poll(id:number,attempt:number){if(attempt>=60)return;setTimeout(()=>this.api.faceDetail(this.studentId,id).subscribe({next:v=>{this.detail.set(v);const s=v?.enrollment?.status;if(s==='PROCESSING')this.poll(id,attempt+1);else this.reload()},error:()=>{}}),1500)}
   openPreview(image:any){const id=this.selectedId();if(id===null)return;this.api.facePreview(this.studentId,id,image.id).subscribe({next:v=>{this.previewName.set(image.originalFileName);this.previewUrl.set(v.url)},error:e=>this.error.set(errorText(e))})}
   closePreview(){this.previewUrl.set('');this.previewName.set('')}

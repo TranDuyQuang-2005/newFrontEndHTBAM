@@ -26,7 +26,7 @@ export interface CatalogBase { id:number; code:string; name:string; note?:string
 export interface Faculty extends CatalogBase {}
 export interface Department extends CatalogBase { facultyId:number; faculty?:string; }
 export interface StudentClass extends CatalogBase { facultyId:number; faculty?:string; startYear?:number|null; }
-export interface Course extends CatalogBase { departmentId?:number|null; credits:number; }
+export interface Course extends CatalogBase { startAcademicYear?:string|null; startSemester?:string|null; startYear?:number|null; endYear?:number|null; departmentId?:number|null; credits:number; }
 export interface Teacher { id:number; teacherCode:string; fullName:string; email:string; userId?:number|null; departmentId?:number|null; note?:string|null; isActive:boolean; }
 export interface ClassSection extends CatalogBase { sourceClassSectionCode?:string|null; courseId:number; course?:string; teacherId:number; teacher?:string; semester:string; academicYear:string; }
 export interface Room extends CatalogBase { location?:string; capacity:number; roomType?:string; }

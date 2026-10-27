@@ -11,7 +11,7 @@ namespace HTBAM.Infrastructure.Data;
 public static class SqlMigrationRunner
 {
     public static readonly string[] Files = ["001_schema.sql", "002_seed.sql", "004_add_llm_comment_metadata.sql",
-        "005_add_catalog_notes.sql", "006_add_annotated_videos.sql", "007_academic_scheduling.sql", "008_schema_integrity.sql", "009_partial_schema_relations.sql", "010_class_section_import_and_numbering.sql", "011_source_class_section_code.sql", "012_catalog_business_codes.sql", "013_lecturer_business_codes.sql"];
+        "005_add_catalog_notes.sql", "006_add_annotated_videos.sql", "007_academic_scheduling.sql", "008_schema_integrity.sql", "009_partial_schema_relations.sql", "010_class_section_import_and_numbering.sql", "011_source_class_section_code.sql", "012_catalog_business_codes.sql", "013_lecturer_business_codes.sql", "014_course_period_and_business_sequences.sql"];
 
     public static string FindDirectory(string? configured = null)
     {
@@ -98,7 +98,7 @@ public static class SqlMigrationRunner
                     var column = property.GetColumnName(identifier)!;
                     await using var cmd = new SqlCommand("SELECT COL_LENGTH(@table,@column)", connection);
                     cmd.Parameters.AddWithValue("@table", "dbo." + table); cmd.Parameters.AddWithValue("@column", column);
-                    if (await cmd.ExecuteScalarAsync(ct) is DBNull) throw new InvalidOperationException($"Schema drift: missing {table}.{column}; check migrations 001..013 before seed.");
+                    if (await cmd.ExecuteScalarAsync(ct) is DBNull) throw new InvalidOperationException($"Schema drift: missing {table}.{column}; check migrations 001..014 before seed.");
                 }
             }
         }

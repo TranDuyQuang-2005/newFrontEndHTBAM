@@ -813,10 +813,10 @@ public sealed class FeatureRegressionTests
 
         db.StudentsSet.Add(new Student { Id = 30, StudentCode = "SV002", FullName = "Other", Email = "sv002@example.test", StudentClassId = 10, AnonymousCode = "ANON-002", IsActive = true });
         await db.SaveChangesAsync();
-        var otherConflict = Assert.IsType<ConflictObjectResult>(await controller.Update(20,
+        Assert.IsType<NoContentResult>(await controller.Update(20,
             new UpsertStudentRequest("sv002", "Existing", "sv001@example.test", 10, "ANON-001", true),
             CancellationToken.None));
-        AssertDuplicate(otherConflict, "STUDENT_CODE_DUPLICATE", "studentCode", "MSSV sv002 đã tồn tại.");
+        Assert.Equal("SV001", (await db.StudentsSet.FindAsync(20L))!.StudentCode);
     }
 
     [Fact]
@@ -830,7 +830,7 @@ public sealed class FeatureRegressionTests
         var controller = WithAdmin(new CatalogsController(db, new AuditSpy()));
 
         Assert.IsType<OkObjectResult>(await controller.AddRoom(
-            new CatalogsController.RoomReq(" a101 ", "Other", null, 20, null), CancellationToken.None));
+            new CatalogsController.RoomReq(" a101 ", "Other", null, 20, null, Campus:"CS1",Building:"A",RoomNumber:"102"), CancellationToken.None));
         Assert.StartsWith("PH-", (await db.Rooms.SingleAsync(x => x.Name == "Other")).Code);
         Assert.IsType<NoContentResult>(await controller.UpdateRoom(1,
             new CatalogsController.RoomReq(" a101 ", "Room", null, 20, null), CancellationToken.None));
@@ -858,12 +858,13 @@ public sealed class FeatureRegressionTests
             new CatalogsController.FacultyReq(" f2 ", "Faculty", null), CancellationToken.None));
         Assert.Equal("F1", (await db.FacultiesSet.FindAsync(1L))!.Code);
         Assert.IsType<OkObjectResult>(await academic.AddDepartment(new(" d1 ", "Department", 1, null), CancellationToken.None));
-        Assert.IsType<OkObjectResult>(await academic.AddStudentClass(new(" sc1 ", "Class", 1, 2026, null), CancellationToken.None));
         (await db.DepartmentsSet.FindAsync(1L))!.Code="BM-CNPM";await db.SaveChangesAsync();
-        Assert.IsType<OkObjectResult>(await academic.AddCourse(new(null, "Course", 1, 3, null), CancellationToken.None));
+        Assert.IsType<OkObjectResult>(await academic.AddStudentClass(new(" sc1 ", "Class", 1, 2026, null, DepartmentId:1), CancellationToken.None));
+        Assert.IsType<OkObjectResult>(await academic.AddCourse(new(null, "Course", 1, 3, null, StartAcademicYear:"2026-2027", StartSemester:"HK1"), CancellationToken.None));
         Assert.IsType<OkObjectResult>(await academic.AddTeacher(new(" gv1 ", "Teacher", "", null, 1, null), CancellationToken.None));
         Assert.IsType<ConflictObjectResult>(await academic.AddClass(new(" cs1 ", "Section", 20, 30, "HK1", "2026", null), CancellationToken.None));
-        Assert.IsType<OkObjectResult>(await admin.AddRoom(new(" r1 ", "Room", null, 10, null), CancellationToken.None));
+        Assert.IsType<OkObjectResult>(await admin.AddRoom(new(" r1 ", "Room", null, 10, null, Campus:"CS1",Building:"A",RoomNumber:"101"), CancellationToken.None));
+        (await db.Rooms.FindAsync(50L))!.Code="PH-CS1-A-102";await db.SaveChangesAsync();
         Assert.IsType<OkObjectResult>(await admin.AddCamera(new(" cam1 ", "Camera", 50, "rtsp://camera.test/other", null), CancellationToken.None));
         Assert.Contains(await db.DepartmentsSet.ToListAsync(), x => x.Code.StartsWith("BM-"));
         Assert.Contains(await db.StudentClassesSet.ToListAsync(), x => x.Code.StartsWith("LSH-"));
@@ -892,7 +893,7 @@ public sealed class FeatureRegressionTests
         Assert.IsType<NoContentResult>(await academic.UpdateFaculty(1, new(" f1 ", "Faculty 1", null), CancellationToken.None));
         Assert.IsType<NoContentResult>(await academic.UpdateDepartment(1, new(" d1 ", "Department 1", 1, null), CancellationToken.None));
         Assert.IsType<NoContentResult>(await academic.UpdateStudentClass(10, new(" sc1 ", "Class", 1, 2026, null), CancellationToken.None));
-        Assert.IsType<NoContentResult>(await academic.UpdateCourse(20, new(" c1 ", "Course", 1, 3, null), CancellationToken.None));
+        Assert.IsType<NoContentResult>(await academic.UpdateCourse(20, new(" c1 ", "Course", 1, 3, null, StartAcademicYear:"2026-2027", StartSemester:"HK1"), CancellationToken.None));
         Assert.IsType<NoContentResult>(await academic.UpdateTeacher(30, new(" gv1 ", "Teacher", "teacher@example.test", 200, 1, null), CancellationToken.None));
         Assert.IsType<ConflictObjectResult>(await academic.UpdateClass(40, new(" cs1 ", "Section", 20, 30, "HK1", "2026", null), CancellationToken.None));
 

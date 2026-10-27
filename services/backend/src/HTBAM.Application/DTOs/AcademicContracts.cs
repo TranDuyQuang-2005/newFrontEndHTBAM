@@ -42,6 +42,6 @@ public record ClassRosterRequest(long[] StudentIds);
 public record ClassStudentNoteRequest([StringLength(2000)] string? Note);
 public record ScheduleExceptionRequest(long AcademicTermId, long? ClassSectionId, DateOnly Date, [Required] string Reason);
 public record BellPeriodRequest(int Number, int Shift, TimeOnly StartsAt, TimeOnly EndsAt);
-public record BellVersionRequest([Required] string Code, [Required] string Group, DateOnly EffectiveFrom, DateOnly? EffectiveTo, [Required] string Evidence, bool Confirmed, BellPeriodRequest[] Periods);
+public record BellVersionRequest(string? Code, [Required] string Group, DateOnly EffectiveFrom, DateOnly? EffectiveTo, [Required] string Evidence, bool Confirmed, BellPeriodRequest[] Periods);
 public record WeekCalendarRequest(long AcademicTermId, [Required] string Name, DateOnly WeekOneMonday, bool Confirmed, [Required] string Evidence);
 public record WeekOneRequest(DateOnly WeekOneMonday, bool Confirmed, [Required] string Evidence);

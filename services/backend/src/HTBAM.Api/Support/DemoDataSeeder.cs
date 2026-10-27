@@ -24,8 +24,11 @@ public static class DemoDataSeeder
             if (!db.DevelopmentDataEnabled) throw new InvalidOperationException("Development seed must be explicitly enabled in Development.");
             password ??= Environment.GetEnvironmentVariable("SEED_DEFAULT_PASSWORD") ?? LocalPassword;
             if (password.Length < 12) throw new InvalidOperationException("SEED_DEFAULT_PASSWORD must have at least 12 characters.");
-            var faculty = await db.FacultiesSet.SingleOrDefaultAsync(x => x.Code == "DEMO-CNTT", ct);
-            if (faculty == null) { faculty = new() { Code = "DEMO-CNTT", Name = "Khoa Công nghệ Thông tin (DEMO)", Note = Warning }; db.FacultiesSet.Add(faculty); await db.SaveChangesAsync(ct); }
+            var facultyMarker = await db.CatalogSeedIdentities.SingleOrDefaultAsync(x => x.Key == "demo.faculty", ct);
+            var faculty = facultyMarker?.FacultyId is long facultyId ? await db.FacultiesSet.SingleAsync(x => x.Id == facultyId, ct)
+                : await db.FacultiesSet.SingleOrDefaultAsync(x => x.Code == "DEMO-CNTT", ct);
+            if (faculty == null) { faculty = new() { Code = await BusinessCodes.Next(db,"KHOA-CNTT-",2,db.FacultiesSet.Select(x=>x.Code),ct,true), Name = "Khoa Công nghệ Thông tin (DEMO)", Note = Warning }; db.FacultiesSet.Add(faculty); await db.SaveChangesAsync(ct); }
+            if (facultyMarker is null) { db.CatalogSeedIdentities.Add(new() { Key="demo.faculty", FacultyId=faculty.Id }); await db.SaveChangesAsync(ct); }
             var departments = new Department[4];
             string[] deptCodes = ["HTTT", "CNPM", "KHMT", "EMPTY"];
             string[] deptNames = ["Hệ thống thông tin", "Công nghệ phần mềm", "Khoa học máy tính", "Bộ môn chờ bổ nhiệm"];
@@ -74,8 +77,11 @@ public static class DemoDataSeeder
             for (var i = 0; i < 3; i++)
             {
                 var code = $"DEMO-SHC-{i + 1:00}";
-                var item = await db.StudentClassesSet.SingleOrDefaultAsync(x => x.Code == code, ct);
-                if (item == null) { item = new() { Code = code, Name = $"Lớp sinh hoạt DEMO {i + 1}", FacultyId = faculty.Id, StartYear = 2026, Note = Warning }; db.StudentClassesSet.Add(item); await db.SaveChangesAsync(ct); }
+                var key = $"demo.student-class.{i+1:00}";
+                var marker = await db.CatalogSeedIdentities.SingleOrDefaultAsync(x=>x.Key==key,ct);
+                var item = marker?.StudentClassId is long classId ? await db.StudentClassesSet.SingleAsync(x=>x.Id==classId,ct) : await db.StudentClassesSet.SingleOrDefaultAsync(x => x.Code == code, ct);
+                if (item == null) { item = new() { Code = await BusinessCodes.Next(db,$"LSH-2026-{departments[i].Code[3..]}-",2,db.StudentClassesSet.Select(x=>x.Code),ct), Name = $"Lớp sinh hoạt DEMO {i + 1}", FacultyId = faculty.Id, StartYear = 2026, Note = Warning }; db.StudentClassesSet.Add(item); await db.SaveChangesAsync(ct); }
+                if(marker is null){db.CatalogSeedIdentities.Add(new(){Key=key,StudentClassId=item.Id});await db.SaveChangesAsync(ct);}
                 studentClasses[i] = item;
             }
             string[] surnames = ["Nguyễn", "Trần", "Lê", "Phạm", "Hoàng", "Huỳnh", "Phan", "Vũ", "Đặng", "Bùi"];
@@ -83,20 +89,28 @@ public static class DemoDataSeeder
             for (var i = 0; i < 60; i++)
             {
                 var code = $"DEMO-SV-{i + 1:03}";
-                if (!await db.StudentsSet.AnyAsync(x => x.StudentCode == code, ct)) db.StudentsSet.Add(new() {
-                    StudentCode = code, AnonymousCode = "ANON-" + code, FullName = surnames[i % 10] + " " + givenNames[i / 10],
-                    Email = $"demo.sv{i + 1:03}@example.invalid", StudentClassId = studentClasses[i / 20].Id, IsActive = i % 20 != 19 });
+                var key=$"demo.student.{i+1:03}";
+                var marker=await db.CatalogSeedIdentities.SingleOrDefaultAsync(x=>x.Key==key,ct);
+                var student=marker?.StudentId is long studentId ? await db.StudentsSet.SingleAsync(x=>x.Id==studentId,ct) : await db.StudentsSet.SingleOrDefaultAsync(x=>x.StudentCode==code,ct);
+                if(student is null){student=new(){
+                    StudentCode = await BusinessCodes.Next(db,"SV-DEMO-",5,db.StudentsSet.Select(x=>x.StudentCode),ct), AnonymousCode = await BusinessCodes.Next(db,"SV-ANON-",6,db.StudentsSet.Select(x=>x.AnonymousCode),ct), FullName = surnames[i % 10] + " " + givenNames[i / 10],
+                    Email = $"demo.sv{i + 1:03}@example.invalid", StudentClassId = studentClasses[i / 20].Id, IsActive = i % 20 != 19 };db.StudentsSet.Add(student);await db.SaveChangesAsync(ct);}
+                if(marker is null){db.CatalogSeedIdentities.Add(new(){Key=key,StudentId=student.Id});await db.SaveChangesAsync(ct);}
             }
             await db.SaveChangesAsync(ct);
-            var students = await db.StudentsSet.Where(x => x.StudentCode.StartsWith("DEMO-SV-") && x.IsActive).OrderBy(x => x.StudentCode).ToArrayAsync(ct);
+            var students = await db.StudentsSet.Where(x => db.CatalogSeedIdentities.Any(m=>m.StudentId==x.Id) && x.IsActive).OrderBy(x => x.StudentCode).ToArrayAsync(ct);
             var rooms = new List<Room>();
             foreach (var (type, count) in new[] { ("THEORY", 5), ("COMPUTER", 4), ("LAB", 2), ("ZOOM", 3), ("INACTIVE", 1) })
                 for (var i = 1; i <= count; i++)
                 {
                     var code = $"DEMO-{type}-{i:00}";
-                    var room = await db.Rooms.SingleOrDefaultAsync(x => x.Code == code, ct);
-                    if (room == null) { room = new() { Code = code, Name = $"Phòng {type} DEMO {i}", RoomType = type == "INACTIVE" ? "THEORY" : type,
+                    var key=$"demo.room.{type}.{i:00}";
+                    var marker=await db.CatalogSeedIdentities.SingleOrDefaultAsync(x=>x.Key==key,ct);
+                    var room = marker?.RoomId is long roomId ? await db.Rooms.SingleAsync(x=>x.Id==roomId,ct) : await db.Rooms.SingleOrDefaultAsync(x => x.Code == code, ct);
+                    // The DEMO campus/building below are explicit fixture metadata, never inferred from real rooms.
+                    if (room == null) { room = new() { Code = BusinessCodes.RoomPrefix("DEMO",type,type=="ZOOM"?$"ZOOM{i:00}":$"{i:000}",type), Name = $"Phòng {type} DEMO {i}", RoomType = type == "INACTIVE" ? "THEORY" : type,
                         Capacity = type == "ZOOM" ? 100 : type == "THEORY" ? 60 : 30, IsActive = type != "INACTIVE", Location = "Cơ sở DEMO", Note = Warning }; db.Rooms.Add(room); await db.SaveChangesAsync(ct); }
+                    if(marker is null){db.CatalogSeedIdentities.Add(new(){Key=key,RoomId=room.Id});await db.SaveChangesAsync(ct);}
                     rooms.Add(room);
                 }
             var terms = new AcademicTerm[2];
@@ -124,7 +138,7 @@ public static class DemoDataSeeder
             if (!await db.CatalogSeedIdentities.AnyAsync(x=>x.Key=="demo.course.HTBAM",ct))
             {
                 var demoCourse=await db.Courses.SingleOrDefaultAsync(x=>x.Code=="HTBAM"||x.DepartmentId==departments[0].Id&&x.Name=="Hệ thống theo dõi hành vi (DEMO)",ct);
-                if(demoCourse is null){demoCourse=new Course{Code=await CatalogNumbering.Course(db,departments[0],true,ct),Name="Hệ thống theo dõi hành vi (DEMO)",DepartmentId=departments[0].Id,Credits=3,Note=Warning};db.Courses.Add(demoCourse);await db.SaveChangesAsync(ct);}
+                if(demoCourse is null){demoCourse=new Course{StartYear=2026,EndYear=2027,StartSemester="HK1",Code=await CatalogNumbering.Course(db,departments[0],true,ct),Name="Hệ thống theo dõi hành vi (DEMO)",DepartmentId=departments[0].Id,Credits=3,Note=Warning};db.Courses.Add(demoCourse);await db.SaveChangesAsync(ct);}
                 db.CatalogSeedIdentities.Add(new(){Key="demo.course.HTBAM",CourseId=demoCourse.Id});
                 await db.SaveChangesAsync(ct);
             }
@@ -135,7 +149,7 @@ public static class DemoDataSeeder
                 var seedKey=$"demo.course.{i+1:00}";
                 var identity=await db.CatalogSeedIdentities.SingleOrDefaultAsync(x=>x.Key==seedKey,ct);
                 var course = identity?.CourseId is long existingId ? await db.Courses.SingleAsync(x=>x.Id==existingId,ct) : await db.Courses.SingleOrDefaultAsync(x => x.Code == code || x.DepartmentId==departments[departmentIndex].Id&&x.Name==courseNames[i]+" (DEMO)", ct);
-                if (course == null) { course = new() { Code = await CatalogNumbering.Course(db,departments[departmentIndex],true,ct), Name = courseNames[i] + " (DEMO)", DepartmentId = departments[departmentIndex].Id,
+                if (course == null) { course = new() { StartYear=2026,EndYear=2027,StartSemester="HK1", Code = await CatalogNumbering.Course(db,departments[departmentIndex],true,ct), Name = courseNames[i] + " (DEMO)", DepartmentId = departments[departmentIndex].Id,
                     Credits = 3 - i % 3, IsActive = i != 12, Note = Warning }; db.Courses.Add(course); await db.SaveChangesAsync(ct); }
                 if(identity is null){db.CatalogSeedIdentities.Add(new(){Key=seedKey,CourseId=course.Id});await db.SaveChangesAsync(ct);}
                 if (i == 12) continue;

@@ -78,7 +78,7 @@ export class AccountComponent implements OnInit {
   }
 
   initials(): string {
-    const name = this.me()?.fullName || this.me()?.userName || 'HTBAM';
+    const name = this.me()?.fullName || this.me()?.userName || 'Hệ thống giám sát';
     return name.split(/\s+/).filter(Boolean).slice(-2).map((part) => part[0]?.toUpperCase()).join('');
   }
 

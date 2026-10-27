@@ -95,7 +95,9 @@ public sealed class ClassSchedulePlanner(AppDbContext db)
                 db.ClassSchedules.Add(schedule);
                 foreach (var occurrence in plan.Occurrences.Where(x => x.LineKey == line.LineKey))
                 {
-                    var session = new Session { ClassSection = section, ClassSchedule = schedule, OccurrenceDate = occurrence.Date,
+                    var shortCode = section.Code.StartsWith("LHP-") ? section.Code[4..] : BusinessCodes.Segment(section.Code, "Mã lớp học phần");
+                    if (Regex.IsMatch(shortCode, "[A-F0-9]{32}")) throw new ArgumentException("Lớp học phần đang dùng mã kỹ thuật cũ. Vui lòng chọn lớp có mã nghiệp vụ hợp lệ trước khi sinh buổi học.");
+                    var session = new Session { Code = await BusinessCodes.Next(db, "BH-" + shortCode + "-", 3, db.SessionsSet.Where(x => x.Code != null).Select(x => x.Code!), ct), ClassSection = section, ClassSchedule = schedule, OccurrenceDate = occurrence.Date,
                         StartPeriod = occurrence.StartPeriod, EndPeriod = occurrence.EndPeriod, BellTimeVersionId = occurrence.BellTimeVersionId,
                         OriginalTeacherId = r.TeacherId, RoomId = occurrence.RoomId, AttendancePolicyId = r.AttendancePolicyId,
                         ScheduledStart = occurrence.StartsAtUtc, ScheduledEnd = occurrence.EndsAtUtc, Status = "DRAFT" };

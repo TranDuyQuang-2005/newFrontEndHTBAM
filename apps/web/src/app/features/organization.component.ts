@@ -4,7 +4,7 @@ import { RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
 import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
-import { ModalComponent, PageTitleComponent, RowActionMenuComponent, errorText } from '../shared/ui';
+import { ModalComponent, PageTitleComponent, RowActionMenuComponent, displayBusinessCode, errorText } from '../shared/ui';
 import { SearchSelectComponent } from '../shared/search-select.component';
 
 @Component({standalone:true,imports:[FormsModule,RouterLink,ModalComponent,PageTitleComponent,RowActionMenuComponent,SearchSelectComponent],template:`
@@ -16,7 +16,7 @@ import { SearchSelectComponent } from '../shared/search-select.component';
   @if(message()){<div class="success-box" role="status">{{message()}}</div>}
   @if(auth.hasPermission('DEPARTMENT_HEAD_ASSIGN')&&!vacancies().length){<div class="notice">Không còn bộ môn trống trong khoa. Sau khi thu hồi chức vụ, bộ môn sẽ xuất hiện lại để gán người khác.</div>}
   <section class="card table-card"><div class="table-wrap"><table><thead><tr><th>Giảng viên</th><th>Khoa / Bộ môn</th><th>Chức vụ còn hiệu lực</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
-    @for(row of rows(); track row.id){<tr><td class="cell-title">{{row.teacherCode}}<small>{{row.fullName}}</small></td><td>{{row.faculty || 'Chưa thuộc khoa'}}<small>{{row.department || 'Chưa thuộc bộ môn'}}</small></td><td>{{row.positionLabel}}</td><td><span class="badge" [class.gray]="!row.isActive">{{row.isActive?'Hoạt động':'Ngừng hoạt động'}}</span></td><td class="menu-cell"><app-row-action-menu>
+    @for(row of rows(); track row.id){<tr><td class="cell-title">{{codeLabel(row.teacherCode)}}<small>{{row.fullName}}</small></td><td>{{row.faculty || 'Chưa thuộc khoa'}}<small>{{row.department || 'Chưa thuộc bộ môn'}}</small></td><td>{{row.positionLabel}}</td><td><span class="badge" [class.gray]="!row.isActive">{{row.isActive?'Hoạt động':'Ngừng hoạt động'}}</span></td><td class="menu-cell"><app-row-action-menu>
       <button type="button" (click)="showInfo(row)">Xem thông tin</button>
       @if(auth.isAdmin()&&row.isActive&&row.userId){<button type="button" (click)="beginFaculty(row)">Bổ nhiệm / chuyển giao Trưởng khoa</button>}
       @if(auth.hasPermission('DEPARTMENT_HEAD_ASSIGN')&&row.isActive&&vacant(row.departmentId)&&row.userId){<button type="button" (click)="beginDepartment(row)">Gán Trưởng bộ môn</button>}
@@ -45,6 +45,7 @@ import { SearchSelectComponent } from '../shared/search-select.component';
   </app-modal>}
 `})
 export class OrganizationComponent implements OnInit {
+  readonly codeLabel = displayBusinessCode;
   private readonly api=inject(ApiService);readonly auth=inject(AuthService);readonly rows=signal<any[]>([]);readonly vacancies=signal<any[]>([]);readonly error=signal('');readonly message=signal('');readonly formError=signal('');readonly saving=signal(false);readonly action=signal<any>(null);form:any={};
   ngOnInit():void{this.load();}
   load():void{forkJoin({rows:this.api.managementAssignments(),vacancies:this.api.vacantDepartments()}).subscribe({next:r=>{this.rows.set(r.rows);this.vacancies.set(r.vacancies);},error:e=>this.error.set(errorText(e))});}

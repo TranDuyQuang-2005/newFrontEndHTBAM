@@ -47,7 +47,7 @@ import { ModalComponent, PageTitleComponent, RowActionMenuComponent, errorText, 
               <tr>
                 <td><span class="cell-title">{{ video.fileName }}</span><small>{{ video.contentType }}</small></td>
                 <td><span class="badge" [class.purple]="video.videoType === 'ANNOTATED_OUTPUT'">{{ typeLabel(video.videoType) }}</span><small>{{ fileSize(video.sizeBytes) }}</small></td>
-                <td>@if(video.sessionId){<span class="cell-title">{{ video.sessionCode || ('Buổi học #' + video.sessionId) }}</span><small>{{ video.courseName }}</small>}@else{—}</td>
+                <td>@if(video.sessionId){<span class="cell-title">{{ video.sessionCode || 'Buổi học liên quan' }}</span><small>{{ video.courseName }}</small>}@else{—}</td>
                 <td>{{ sourceLabel(video) }}</td>
                 <td>{{ date(video.uploadedAt) }}</td>
                 <td><span class="badge" [class.blue]="video.status === 'PROCESSING' || video.status === 'UPLOADED'" [class.danger]="video.status === 'FAILED'">{{ statusLabel(video.status) }}</span></td>
@@ -59,7 +59,7 @@ import { ModalComponent, PageTitleComponent, RowActionMenuComponent, errorText, 
                 </td>
               </tr>
             } @empty {
-              <tr><td colspan="7" class="empty">Không có video phù hợp. Buổi camera cũ chỉ xuất hiện ở đây nếu pipeline đã ghép và lưu artifact thành công; hệ thống không tự tạo video khi chunk nguồn không còn.</td></tr>
+              <tr><td colspan="7" class="empty">Không có video phù hợp. Video từ camera chỉ xuất hiện sau khi hệ thống xử lý và lưu tệp thành công.</td></tr>
             }
           </tbody>
         </table>

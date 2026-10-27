@@ -5,7 +5,7 @@ LLM chỉ diễn giải dữ liệu tổng hợp đã có trong SQL Server thàn
 ## A. Model hiện tại
 
 - Provider: Google Gemini
-- Model: `gemini-2.5-pro`
+- Model: `gemini-3.5-flash-lite`
 - SDK backend: `Google.GenAI`
 - Fallback: `RULE_BASED_FALLBACK`
 
@@ -70,7 +70,7 @@ Tạo `LocalLlmProvider : ILlmProvider` để gọi Ollama, vLLM hoặc inferenc
 "Llm": {
   "Enabled": true,
   "Provider": "GEMINI",
-  "Model": "gemini-2.5-pro",
+  "Model": "gemini-3.5-flash-lite",
   "TimeoutSeconds": 45,
   "Temperature": 0.2,
   "MaxOutputTokens": 500

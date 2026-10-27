@@ -5,7 +5,7 @@ import { Subscription, forkJoin } from 'rxjs';
 import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
 import { AcademicConfiguration, Room } from '../core/models';
-import { ModalComponent, RowActionMenuComponent, errorText } from '../shared/ui';
+import { ModalComponent, RowActionMenuComponent, displayBusinessCode, errorText, statusText } from '../shared/ui';
 import { SearchSelectComponent } from '../shared/search-select.component';
 import { DateInputComponent } from '../shared/date-input.component';
 import { ClassSectionImportComponent } from './class-section-import.component';
@@ -33,7 +33,7 @@ import { CatalogSectionHeaderComponent } from '../shared/catalog-section-header.
       <thead><tr><th>Mã / Tên</th><th>Môn học</th><th>Bộ môn</th><th>Giảng viên</th><th>Năm học / Học kỳ</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
       <tbody>@for (entry of rows(); track entry.data.id) {
         <tr class="clickable-row" tabindex="0" [attr.aria-label]="'Xem lớp ' + entry.data.name" (click)="rowClick($event, entry.data.id)" (keydown.enter)="rowKey($event, entry.data.id)">
-          <td class="cell-title">{{entry.data.code}}<small>{{entry.data.name}}</small>@if(entry.data.sourceClassSectionCode){<small>Mã nguồn: {{entry.data.sourceClassSectionCode}}</small>}</td>
+          <td class="cell-title">{{codeLabel(entry.data.code)}}<small>{{entry.data.name}}</small>@if(entry.data.sourceClassSectionCode){<small>Mã nguồn: {{entry.data.sourceClassSectionCode}}</small>}</td>
           <td>{{entry.data.course}}<small>{{entry.data.credits}} tín chỉ</small></td><td>{{entry.data.department}}</td><td>{{entry.data.teacher}}</td>
           <td>{{entry.data.academicYear}} · HK{{entry.data.semester}}<small>{{entry.data.phase ? 'Giai đoạn ' + entry.data.phase : 'Nguyên kỳ / dữ liệu cũ'}}</small></td>
           <td><span class="badge" [class.gray]="!entry.data.isActive">{{entry.data.isActive ? 'Hoạt động' : 'Ngừng hoạt động'}}</span></td>
@@ -50,10 +50,10 @@ import { CatalogSectionHeaderComponent } from '../shared/catalog-section-header.
 
     @if(detail()){<app-modal title="Thông tin lớp học phần" size="lg" (close)="detail.set(null)">
       <dl class="details-grid">
-        <div><dt>Mã nội bộ</dt><dd>{{detail().code}}</dd></div><div><dt>Mã lớp nguồn</dt><dd>{{detail().sourceClassSectionCode || 'Không có'}}</dd></div>
+        <div><dt>Mã nội bộ</dt><dd>{{codeLabel(detail().code)}}</dd></div><div><dt>Mã lớp nguồn</dt><dd>{{detail().sourceClassSectionCode || 'Không có'}}</dd></div>
         <div><dt>Tên lớp</dt><dd>{{detail().name}}</dd></div><div><dt>Môn / tín chỉ</dt><dd>{{detail().course}} · {{detail().credits}} TC</dd></div>
         <div><dt>Khoa</dt><dd>{{detail().faculty}}</dd></div><div><dt>Bộ môn</dt><dd>{{detail().department}}</dd></div>
-        <div><dt>Giảng viên</dt><dd>{{detail().teacherCode}} · {{detail().teacher}}</dd></div><div><dt>Năm học / học kỳ / giai đoạn</dt><dd>{{detail().academicYear}} · HK{{detail().semester}} · {{detail().phase ? 'GĐ ' + detail().phase : 'Nguyên kỳ / dữ liệu cũ'}}</dd></div>
+        <div><dt>Giảng viên</dt><dd>{{codeLabel(detail().teacherCode)}} · {{detail().teacher}}</dd></div><div><dt>Năm học / học kỳ / giai đoạn</dt><dd>{{detail().academicYear}} · HK{{detail().semester}} · {{detail().phase ? 'GĐ ' + detail().phase : 'Nguyên kỳ / dữ liệu cũ'}}</dd></div>
         <div><dt>Khoảng ngày học kỳ</dt><dd>{{date(detail().term?.startsOn)}} – {{date(detail().term?.endsOn)}}</dd></div><div><dt>Trạng thái</dt><dd>{{detail().isActive ? 'Hoạt động' : 'Ngừng hoạt động'}}</dd></div>
         <div><dt>Khoảng ngày lựa chọn</dt><dd>{{date(detail().dateRange?.startsOn)}} – {{date(detail().dateRange?.endsOn)}}</dd></div>
         <div><dt>Ghi chú</dt><dd>{{detail().note || '—'}}</dd></div>
@@ -67,14 +67,13 @@ import { CatalogSectionHeaderComponent } from '../shared/catalog-section-header.
 
     @if(editorOpen()){<app-modal [title]="editingId ? 'Sửa lớp học phần và lịch' : 'Thêm lớp học phần'" size="lg" [busy]="saving()" (close)="closeEditor()">
       @if(editorError()){<div class="error-box" role="alert">{{editorError()}}</div>}
-      <form class="stack" (ngSubmit)="previewChanges()" (input)="invalidatePreview()" (change)="invalidatePreview()">
+      <form class="stack" #scheduleForm="ngForm" (ngSubmit)="scheduleForm.control.markAllAsTouched(); scheduleForm.valid && previewChanges()" (input)="invalidatePreview()" (change)="invalidatePreview()">
         <div class="form-grid">
-          <label>Mã nội bộ<input [value]="form.code || 'Tự động tạo khi lưu'" readonly /></label>
           <label>Tên lớp học phần<input name="name" [(ngModel)]="form.name" required [disabled]="!manager() && !permissions.canEditDetails" /></label>
           <label>Môn học<app-search-select name="courseId" resource="courses" label="Môn học" [(ngModel)]="form.courseId" [disabled]="!manager() || !!form.hasProtectedSessions" (ngModelChange)="courseChanged()" /></label>
           <label>Giảng viên<app-search-select name="teacherId" resource="teachers" label="Giảng viên" [(ngModel)]="form.teacherId" [disabled]="!manager()" [filters]="{departmentId: selectedCourse()?.departmentId}" (ngModelChange)="invalidatePreview()" /></label>
           <label>Năm học<select name="academicYear" [(ngModel)]="form.academicYear" [disabled]="!manager() || !!form.hasProtectedSessions" (ngModelChange)="yearChanged()"><option value="">Chọn năm học</option>@for(year of academicYears(); track year){<option [value]="year">{{year}}</option>}</select></label>
-          <label>Học kỳ<select name="termId" [(ngModel)]="form.academicTermId" [disabled]="!manager() || !!form.hasProtectedSessions" (ngModelChange)="dependenciesChanged()"><option [ngValue]="null">Chọn học kỳ</option>@for(term of termsForYear(); track term.id){<option [ngValue]="term.id">Học kỳ {{term.semester}}{{term.isDevelopment ? ' · DEMO' : term.datesConfirmed ? '' : ' · chưa đủ cấu hình'}}</option>}</select></label>
+          <label>Học kỳ<select name="termId" [(ngModel)]="form.academicTermId" [disabled]="!manager() || !!form.hasProtectedSessions" (ngModelChange)="dependenciesChanged()"><option [ngValue]="null">Chọn học kỳ</option>@for(term of termsForYear(); track term.id){<option [ngValue]="term.id">Học kỳ {{term.semester}}{{term.isDevelopment ? ' · Dữ liệu mẫu' : term.datesConfirmed ? '' : ' · chưa đủ cấu hình'}}</option>}</select></label>
           <label>Ngày học kỳ<input [value]="date(selectedTerm()?.startsOn) + ' – ' + date(selectedTerm()?.endsOn)" readonly /></label>
           <div>Tuần 1 bắt đầu: {{weekAnchor() ? date(weekAnchor()) : 'Chưa cấu hình Mốc bắt đầu Tuần 1 cho học kỳ này'}} @if(selectedTerm()?.isDevelopment){<span class="badge warning">Mốc tuần mẫu</span>}<br><a routerLink="/academic-configuration">Cấu hình học vụ</a></div>
           <label>Giai đoạn<select name="phase" [(ngModel)]="form.phase" [disabled]="!manager() || !!form.hasProtectedSessions || selectedCourse()?.credits === 3" (ngModelChange)="refreshRange(true)"><option [ngValue]="null">{{selectedCourse()?.credits === 3 ? 'Nguyên kỳ (3 tín chỉ)' : 'Chọn giai đoạn'}}</option>@for(n of phaseOptions(); track n){<option [ngValue]="n">Giai đoạn {{n}}</option>}</select></label>
@@ -93,7 +92,7 @@ import { CatalogSectionHeaderComponent } from '../shared/catalog-section-header.
               <label>Tiết bắt đầu<select [name]="'start' + i" [(ngModel)]="line.startPeriod" (ngModelChange)="startPeriodChanged(line)">@for(n of periods; track n){<option [ngValue]="n">{{n}} · {{periodLabel(line,n)}}</option>}</select></label>
               <label>Tiết kết thúc<select [name]="'end' + i" [(ngModel)]="line.endPeriod"><option [ngValue]="null">Chọn tiết kết thúc</option>@for(n of endPeriods(line); track n){<option [ngValue]="n">{{n}} · {{periodLabel(line,n)}}</option>}</select></label>
               <label>Từ ngày<app-date-input [name]="'from' + i" label="Từ ngày (dd/MM/yyyy)" [(ngModel)]="line.startsOn" /></label>
-              <label>Đến ngày<app-date-input [name]="'to' + i" label="Đến ngày (dd/MM/yyyy)" [(ngModel)]="line.endsOn" /></label>
+              <label>Đến ngày<app-date-input [name]="'to' + i" label="Đến ngày (dd/MM/yyyy)" [(ngModel)]="line.endsOn" [min]="line.startsOn" errorMessage="Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu." /></label>
               <label class="span2">Các tuần có lịch<select [name]="'weeksMode' + i" [(ngModel)]="line.specificWeeks" (ngModelChange)="weeksModeChanged(line)"><option [ngValue]="false">Học tất cả tuần</option><option [ngValue]="true">Chỉ học một số tuần</option></select></label>
               @if(line.specificWeeks){<div class="week-chips span2" role="group" aria-label="Các tuần có lịch">@for(n of weeksForLine(line); track n){<label class="check"><input type="checkbox" [name]="'week' + i + '-' + n" [ngModel]="line.selectedWeeks.includes(n)" (ngModelChange)="toggleWeek(line,n,$event)" />T{{n}}</label>}@if(!weekAnchor()){<p class="error-box">Chưa cấu hình Mốc bắt đầu Tuần 1 cho học kỳ này. <a routerLink="/academic-configuration">Cấu hình học vụ</a></p>}</div>}
               @if(line.weekCalendarId){<p class="notice span2">Dòng lịch cũ sử dụng mốc tuần riêng đã lưu. Hệ thống giữ nguyên mốc để bảo toàn lịch sử.</p>}
@@ -103,8 +102,8 @@ import { CatalogSectionHeaderComponent } from '../shared/catalog-section-header.
         </div>
         @if(manager() || permissions.canAddDetails){<button type="button" class="secondary" [disabled]="!range()" (click)="addLine()">+ Thêm dòng lịch</button>}
         @if(preview()){<section class="card"><h3>Ảnh hưởng trước khi áp dụng</h3><p>Tạo {{preview().createCount}} buổi; thay {{preview().replaceCount}} buổi tương lai chưa có dữ liệu; giữ {{preview().preserveCount}} buổi đã diễn ra/đang chạy/có dữ liệu.</p>
-          <div class="table-wrap" style="max-height:220px"><table><thead><tr><th>Buổi bị thay</th><th>Thời gian</th><th>Trạng thái</th></tr></thead><tbody>@for(s of preview().affectedSessions; track s.id){<tr><td>#{{s.id}}</td><td>{{instant(s.scheduledStart)}}</td><td>{{s.status}}</td></tr>}@empty{<tr><td colspan="3" class="empty">Không thay buổi cũ.</td></tr>}</tbody></table></div>
-          @if(preview().preservedSessionIds.length){<p class="field-hint">Giữ nguyên các buổi: {{preview().preservedSessionIds.join(', ')}}</p>}
+          <div class="table-wrap" style="max-height:220px"><table><thead><tr><th>Buổi bị thay</th><th>Trạng thái</th></tr></thead><tbody>@for(s of preview().affectedSessions; track s.id){<tr><td>{{instant(s.scheduledStart)}}</td><td>{{statusText(s.status)}}</td></tr>}@empty{<tr><td colspan="2" class="empty">Không thay buổi cũ.</td></tr>}</tbody></table></div>
+          @if(preview().preservedSessionIds.length){<p class="field-hint">Giữ nguyên {{preview().preservedSessionIds.length}} buổi học đã có dữ liệu hoặc đang diễn ra.</p>}
         </section>}
         <div class="modal-footer" style="margin:0 -20px -20px"><button type="button" class="secondary" [disabled]="saving()" (click)="closeEditor()">Hủy</button><button type="submit" class="secondary" [disabled]="saving() || previewing()">{{previewing() ? 'Đang kiểm tra…' : 'Xem trước lịch / ảnh hưởng'}}</button><button type="button" [disabled]="saving() || !preview()" (click)="save()">{{saving() ? 'Đang lưu…' : 'Xác nhận và lưu'}}</button></div>
       </form>
@@ -118,7 +117,7 @@ import { CatalogSectionHeaderComponent } from '../shared/catalog-section-header.
     </app-modal>}
 
     @if(grantSection()){<app-modal title="Quyền giảng viên theo lớp học phần" [busy]="saving()" (close)="grantSection.set(null)">
-      <p>{{grantSection().code}} · {{grantSection().name}}</p><p>Giảng viên được phân công: <strong>{{grantSection().teacher}}</strong></p>
+      <p>{{codeLabel(grantSection().code)}} · {{grantSection().name}}</p><p>Giảng viên được phân công: <strong>{{grantSection().teacher}}</strong></p>
       @if(editorError()){<div class="error-box">{{editorError()}}</div>}
       <div class="stack"><label class="check"><input type="checkbox" [(ngModel)]="grant.canAddDetails" />Thêm chi tiết / dòng lịch</label><label class="check"><input type="checkbox" [(ngModel)]="grant.canEditDetails" />Sửa chi tiết / dòng lịch</label><label class="check"><input type="checkbox" [(ngModel)]="grant.canDeleteDetails" />Xóa dòng lịch</label><label class="check"><input type="checkbox" [(ngModel)]="grant.canManageStudents" />Thêm/bỏ sinh viên và sửa ghi chú trong lớp</label></div>
       <p class="notice">Quyền chỉ áp dụng cho lớp này. Giảng viên không được ngừng lớp hoặc sửa hồ sơ sinh viên toàn hệ thống.</p>
@@ -129,6 +128,8 @@ import { CatalogSectionHeaderComponent } from '../shared/catalog-section-header.
   `,
 })
 export class ClassSectionsComponent implements OnInit, OnDestroy {
+  readonly codeLabel = displayBusinessCode;
+  readonly statusText = statusText;
   readonly api = inject(ApiService); readonly auth = inject(AuthService);
   readonly importOpen = signal(false);
   readonly rows = signal<any[]>([]); readonly total = signal(0); readonly loading = signal(false); readonly saving = signal(false);
@@ -153,7 +154,7 @@ export class ClassSectionsComponent implements OnInit, OnDestroy {
   openEditor(id?:number):void {
     this.editorError.set('');this.preview.set(null);this.range.set(null);this.rangeError.set('');this.editingId=id??null;
     this.existingKeys.clear();
-    if(id){this.api.sectionDetail(id).subscribe({next:r=>{this.permissions=r.permissions;this.form={...r,schedules:r.schedules.map((x:any)=>({...x,specificWeeks:x.selectedWeeks.length>0}))};this.existingKeys=new Set(r.schedules.map((x:any)=>x.lineKey));this.editorOpen.set(true);this.refreshRange(false);},error:e=>this.error.set(errorText(e))});}
+    if(id){this.api.sectionDetail(id).subscribe({next:r=>{this.permissions=r.permissions;const {code,...editable}=r;this.form={...editable,schedules:r.schedules.map((x:any)=>({...x,specificWeeks:x.selectedWeeks.length>0}))};this.existingKeys=new Set(r.schedules.map((x:any)=>x.lineKey));this.editorOpen.set(true);this.refreshRange(false);},error:e=>this.error.set(errorText(e))});}
     else{this.permissions={isManager:true};this.form={name:'',sourceClassSectionCode:'',note:'',courseId:null,teacherId:null,academicYear:'',academicTermId:null,phase:null,attendancePolicyId:null,schedules:[],revision:0,creationKey:crypto.randomUUID().replaceAll('-','')};this.editorOpen.set(true);}
   }
   manager():boolean{return !this.editingId||!!this.permissions.isManager;}

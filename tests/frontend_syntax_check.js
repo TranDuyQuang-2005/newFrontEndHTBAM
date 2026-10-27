@@ -13,7 +13,8 @@ const management=fs.readFileSync(path.join(root,'app','features','management.com
 if(management.includes('class="inline-actions"'))bad.push('management.component.ts: vẫn còn nhóm thao tác theo dòng hiển thị inline');
 for(const required of ['reactivateCatalog','Kích hoạt lại','apiFieldErrors','editorFieldErrors']){if(!management.includes(required))bad.push(`management.component.ts: thiếu luồng ${required}`)}
 const students=fs.readFileSync(path.join(root,'app','features','students.component.ts'),'utf8');
-for(const field of ['studentCode','email','anonymousCode']){if(!students.includes(`studentFieldErrors()['${field}']`))bad.push(`students.component.ts: thiếu lỗi theo trường ${field}`)}
+for(const field of ['studentCode','email']){if(!students.includes(`studentFieldErrors()['${field}']`))bad.push(`students.component.ts: thiếu lỗi theo trường ${field}`)}
+if(students.includes('formControlName="anonymousCode"'))bad.push('students.component.ts: mã ẩn danh phải được cấp ở backend, không có ô nhập')
 const policies=fs.readFileSync(path.join(root,'app','features','policies.component.ts'),'utf8');
 for(const required of ['deactivatePolicy','reactivatePolicy','Kích hoạt lại']){if(!policies.includes(required))bad.push(`policies.component.ts: thiếu luồng ${required}`)}
 const users=fs.readFileSync(path.join(root,'app','features','admin-users.component.ts'),'utf8');

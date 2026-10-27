@@ -32,7 +32,7 @@ public static class LlmPromptBuilder
             .AppendLine($"ObservationQuality: {(request.ObservationQuality * 100).ToString("0.##", c)}%");
 
         if (request.AttendanceScore is not null)
-            text.AppendLine($"AttendanceScore: {request.AttendanceScore.Value.ToString("0.##", c)}");
+            text.AppendLine($"AttendanceScorePercent: {request.AttendanceScore.Value.ToString("0.##", c)}%");
         if (request.PresentSeconds is not null)
             text.AppendLine($"PresentSeconds: {request.PresentSeconds.Value}");
         if (request.ObservedSeconds is not null)

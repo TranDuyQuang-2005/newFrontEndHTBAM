@@ -42,7 +42,7 @@ import { ImportColumnChoice, ImportColumnSelectComponent } from '../shared/impor
       @if(weekMappings().length){<section class="import-week-mapping"><h5>Ánh xạ nhóm cột · Các tuần có lịch</h5><p class="notice">{{weekMappingSummary()}}</p><details><summary>Xem chi tiết từng cột tuần</summary><ul class="import-week-columns">@for(mapping of weekMappings(); track mapping.field){<li>{{columnLabel(mapping.columnIndex)}}</li>}</ul></details><p class="field-hint">x, X, 1, true hoặc dấu ✓/✔/☑/√: tuần được chọn; ô trống: tuần không được chọn.</p></section>}
       <p class="field-hint">Cần Mã môn hoặc Tên môn học, Mã GV hoặc Giảng viên. Hệ thống không đoán mã môn từ Mã LHP và không tự tạo danh mục.</p>
       <div class="form-grid">
-        <label>Năm học / Học kỳ<select [(ngModel)]="termId" [disabled]="busy()"><option [ngValue]="null">Chọn học kỳ</option>@for(term of config?.terms; track term.id){<option [ngValue]="term.id">{{term.academicYear}} · HK{{term.semester}}{{term.isDevelopment ? ' · DEMO' : ''}}</option>}</select></label>
+        <label>Năm học / Học kỳ<select [(ngModel)]="termId" [disabled]="busy()"><option [ngValue]="null">Chọn học kỳ</option>@for(term of config?.terms; track term.id){<option [ngValue]="term.id">{{term.academicYear}} · HK{{term.semester}}{{term.isDevelopment ? ' · Dữ liệu mẫu' : ''}}</option>}</select></label>
         <label>Chính sách chuyên cần<app-search-select [boundToModal]="true" resource="policies" label="Chính sách chuyên cần" [(ngModel)]="policyId" [disabled]="busy()" /></label>
         <label>Giai đoạn mặc định (môn 1/2 TC)<select [(ngModel)]="phase" [disabled]="busy()"><option [ngValue]="null">Theo cột Giai đoạn</option>@for(n of [1,2,3]; track n){<option [ngValue]="n">Giai đoạn {{n}}</option>}</select></label>
       </div>
@@ -53,7 +53,7 @@ import { ImportColumnChoice, ImportColumnSelectComponent } from '../shared/impor
       </tbody></table></div>
     }
     @if((step() === 4 || step() === 5) && preview(); as p){
-      <p class="notice">{{p.weekMessage}} @if(p.isDevelopment){<strong> · Mốc tuần mẫu</strong>}</p>
+      <p class="notice">{{p.weekMessage}} @if(p.isDevelopment){<strong> · Dữ liệu mẫu</strong>}</p>
       @if(!p.weekOneMonday){<a routerLink="/academic-configuration">Mở Cấu hình học vụ</a>}
       <p role="status">File {{p.workbookRows.toLocaleString('vi-VN')}} dòng, {{p.workbookColumns}} cột; {{p.dataRows.toLocaleString('vi-VN')}} dòng dữ liệu và {{p.totalGroups.toLocaleString('vi-VN')}} nhóm Mã LHP.</p>
       <div class="notice">Sẽ tạo {{p.classesToCreate}} lớp, {{p.schedulesToCreate}} dòng lịch. Bỏ qua {{p.skippedRows}} dòng; cảnh báo {{p.warningRows}} dòng; lỗi {{p.errorRows}} dòng; trùng {{p.duplicates}} dòng.</div>

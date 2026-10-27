@@ -59,7 +59,7 @@ public sealed class LecturerCodeTests
         await using(var db=database.Context()){
             db.DevelopmentDataEnabled=true;await DemoDataSeeder.SeedAsync(db);
             Assert.All(await db.Teachers.Where(x=>db.UsersSet.Any(u=>u.Id==x.UserId&&u.UserName.StartsWith("demo."))).ToArrayAsync(),x=>Assert.Matches("^GV-[A-Z0-9]+(?:-[0-9]{2})?-[0-9]{4}$",x.TeacherCode));
-            userId=await db.UsersSet.Where(x=>x.UserName=="demo.dean").Select(x=>x.Id).SingleAsync();var facultyId=await db.FacultiesSet.Where(x=>x.Code=="DEMO-CNTT").Select(x=>x.Id).SingleAsync();
+            userId=await db.UsersSet.Where(x=>x.UserName=="demo.dean").Select(x=>x.Id).SingleAsync();var facultyId=(await db.CatalogSeedIdentities.SingleAsync(x=>x.Key=="demo.faculty")).FacultyId!.Value;
             departmentId=Assert.IsType<Department>(Assert.IsType<OkObjectResult>(await With(new CatalogsController(db,new Audit()),userId).AddDepartment(new(null,"Trí tuệ nhân tạo",facultyId,null),Ct)).Value).Id;
             oldCodes=await db.Teachers.ToDictionaryAsync(x=>x.Id,x=>x.TeacherCode);
         }

@@ -114,7 +114,7 @@ public sealed class AcademicConfigurationController(AppDbContext db, IAuditServi
         BusinessTransaction.Run<ActionResult>(db, "HTBAM:academic-scheduling", async () =>
         {
             if (!await AccessScope.CanConfigureAcademicsAsync(db, User, ct)) return Forbid();
-            if (r.Group is not ("A" or "B") || !r.Confirmed || string.IsNullOrWhiteSpace(r.Evidence) || string.IsNullOrWhiteSpace(r.Code) || r.EffectiveTo < r.EffectiveFrom)
+            if (r.Group is not ("A" or "B") || !r.Confirmed || string.IsNullOrWhiteSpace(r.Evidence) || r.EffectiveTo < r.EffectiveFrom)
                 return BadRequest("Cần nhóm A/B, phiên bản, khoảng hiệu lực và căn cứ đã xác nhận.");
             var periods = r.Periods.OrderBy(x => x.Number).ToArray();
             if (!periods.Select(x => x.Number).SequenceEqual(Enumerable.Range(1, 16)) ||
@@ -125,7 +125,7 @@ public sealed class AcademicConfigurationController(AppDbContext db, IAuditServi
                 return Conflict("Khoảng hiệu lực trùng phiên bản giờ đã có. Bảng giờ cũ bổ sung phải kết thúc trước phiên bản tiếp theo.");
             // Appending a new version only closes the previous validity interval; its periods and stored sessions remain intact.
             foreach (var previous in overlaps) previous.EffectiveTo = r.EffectiveFrom.AddDays(-1);
-            var version = new BellTimeVersion { Code = r.Code.Trim(), Group = r.Group, EffectiveFrom = r.EffectiveFrom, EffectiveTo = r.EffectiveTo, Confirmed = true, Evidence = r.Evidence.Trim() };
+            var version = new BellTimeVersion { Code = await BusinessCodes.Next(db,"GIO-"+r.Group+"-",4,db.BellTimeVersions.Select(x=>x.Code),ct), Group = r.Group, EffectiveFrom = r.EffectiveFrom, EffectiveTo = r.EffectiveTo, Confirmed = true, Evidence = r.Evidence.Trim() };
             db.BellTimeVersions.Add(version);
             db.BellPeriods.AddRange(periods.Select(x => new BellPeriod { BellTimeVersion = version, Number = x.Number, Shift = x.Shift, StartsAt = x.StartsAt, EndsAt = x.EndsAt }));
             await db.SaveChangesAsync(ct);

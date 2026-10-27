@@ -1,3 +1,4 @@
+import { normalizeAcademicYear, validAcademicYear, normalizeSemester } from '../shared/date-only';
 import {
   Component,
   OnInit,
@@ -26,6 +27,7 @@ import {
   ModalComponent,
   PageTitleComponent,
   RowActionMenuComponent,
+  displayBusinessCode,
   apiFieldErrors,
   errorText,
   statusText,
@@ -105,10 +107,10 @@ import {
           <table>
             <thead>
               <tr>
-                <th>Mã</th>
-                <th>Tên / Họ tên</th>
-                <th>Thông tin</th>
-                <th>Ghi chú</th>
+                @if(tab() !== 'courses'){<th>Mã</th>}
+                <th>{{tab() === 'courses' ? 'Tên môn học' : 'Tên / Họ tên'}}</th>
+                @if(tab() === 'courses'){<th>Bộ môn</th><th>Số tín chỉ</th><th>Năm học bắt đầu</th><th>Học kỳ bắt đầu</th>}@else{<th>Thông tin</th>}
+                <th [class.catalog-note]="tab() === 'courses'">Ghi chú</th>
                 <th>Trạng thái</th>
                 <th>Thao tác</th>
               </tr>
@@ -120,13 +122,12 @@ import {
                 track item.id
               ) {
                 <tr>
-                  <td>
+                  @if(tab() !== 'courses'){<td>
                     {{
-                      item.code ||
-                        item.teacherCode
+                      codeLabel(item.code || item.teacherCode)
                     }}
                     @if(tab() === 'teachers' && legacyTeacherCode(item.teacherCode)){<small class="badge">Mã cũ</small>}
-                  </td>
+                  </td>}
 
                   <td>
                     {{
@@ -135,11 +136,11 @@ import {
                     }}
                   </td>
 
-                  <td>
-                    {{ info(item) }}
-                  </td>
+                  @if(tab() === 'courses'){
+                    <td>{{departmentName(item.departmentId)}}</td><td>{{item.credits}}</td><td>{{item.startAcademicYear || 'Chưa thiết lập'}}</td><td>{{item.startSemester || 'Chưa thiết lập'}}</td>
+                  }@else{<td>{{ info(item) }}</td>}
 
-                  <td>
+                  <td [class.catalog-note]="tab() === 'courses'">
                     <span
                       class="clamp"
                       [title]="
@@ -196,7 +197,7 @@ import {
                               )
                             "
                           >
-                            Test RTSP
+                            Kiểm tra kết nối camera
                           </button>
                         }
 
@@ -236,7 +237,7 @@ import {
               } @empty {
                 <tr>
                   <td
-                    colspan="6"
+                    [attr.colspan]="tab() === 'courses' ? 8 : 6"
                     class="empty"
                   >
                     Chưa có dữ liệu.
@@ -275,21 +276,13 @@ import {
             <label class="span2">Tên môn học *<input type="text" name="courseName" [(ngModel)]="form.name" required maxlength="256" /></label>
             <label class="course-department">Bộ môn *<app-search-select name="courseDepartment" resource="departments" label="Bộ môn" [boundToModal]="true" [constrainWidth]="true" [markLegacyDepartments]="true" [ngModel]="form.departmentId" (ngModelChange)="courseDepartmentChanged($event)" [disabled]="saving() || !!editingId()" /></label>
             <label>Tín chỉ *<input name="courseCredits" type="number" min="1" max="20" [(ngModel)]="form.credits" required /></label>
-            <section class="catalog-code-info span2" aria-label="Mã môn học"><strong>Mã môn học</strong><p>{{editingId() ? form.code : 'Tự động tạo sau khi chọn Bộ môn và lưu'}}</p>
-              @if(editingId()){<small>Bộ môn và mã đã cấp được giữ nguyên khi sửa.</small>}
-              @if(codePreview()){<p role="status">Mã dự kiến: {{codePreview()}} <small>Chỉ tham khảo; backend cấp mã chính thức khi lưu.</small></p>}
-              @if(codePreviewLoading()){<p role="status">Đang lấy mã dự kiến…</p>}
-              @if(departmentCodeError()){<p class="field-error" role="alert">{{departmentCodeError()}}</p>}
-            </section>
+            <div class="course-period span2">
+              <label>Năm học bắt đầu *<input name="startAcademicYear" [(ngModel)]="form.startAcademicYear" (blur)="normalizePeriod()" placeholder="Ví dụ: 2026-2027" required />@if(periodTouched && !validAcademicYear(form.startAcademicYear || '')){<small class="field-error">Năm học phải có dạng YYYY-YYYY và hai năm phải liên tiếp.</small>}</label>
+              <label>Học kỳ bắt đầu *<input name="startSemester" [(ngModel)]="form.startSemester" (blur)="normalizePeriod()" placeholder="Ví dụ: HK1" required />@if(periodTouched && !['HK1','HK2'].includes(form.startSemester)){<small class="field-error">Học kỳ chỉ nhận HK1 hoặc HK2.</small>}</label>
+            </div>
+            @if(departmentCodeError()){<p class="field-error span2" role="alert">{{departmentCodeError()}}</p>}
           } @else {
-          @if(tab() === 'teachers'){<section class="catalog-code-info span2" aria-label="Mã giảng viên"><strong>Mã giảng viên</strong><p>{{editingId()?form.teacherCode:'Tự động tạo khi lưu'}}</p>
-            @if(codePreview()){<p role="status">Mã dự kiến: {{codePreview()}} <small>Chỉ tham khảo; backend cấp mã chính thức khi lưu.</small></p>}
-            @if(codePreviewLoading()){<p role="status">Đang lấy mã dự kiến…</p>}
-            @if(departmentCodeError()){<p class="field-error" role="alert">{{departmentCodeError()}}</p>}
-            @if(editingId() && form.departmentId !== originalTeacherDepartmentId){<p class="notice">Mã giảng viên đã cấp sẽ được giữ nguyên để bảo toàn dữ liệu lịch sử.</p>}
-          </section>}
-          @else if(tab() === 'departments' && !editingId()){<div class="catalog-code-info span2"><strong>Mã bộ môn</strong><p>Tự động tạo khi lưu</p></div>}
-          @else {<label>Mã nội bộ<input [value]="(tab() === 'teachers' ? form.teacherCode : form.code) || 'Tự động tạo khi lưu'" readonly /></label>}
+          @if(departmentCodeError()){<p class="field-error span2" role="alert">{{departmentCodeError()}}</p>}
 
           <label>
             {{
@@ -388,7 +381,14 @@ import {
             </label>
           }
 
+          @if(tab() === 'student-classes' && !editingId()){
+            <label>Chuyên ngành / Bộ môn *<app-search-select name="studentClassDepartment" resource="departments" label="Chuyên ngành / Bộ môn" [filters]="{facultyId:form.facultyId}" [(ngModel)]="form.departmentId" /></label>
+          }
           @if (tab() === 'rooms') {
+            @if(!editingId()){
+              @if(form.roomType !== 'ZOOM'){<label>Cơ sở *<input name="campus" [(ngModel)]="form.campus" placeholder="Ví dụ: CS1" required /></label><label>Dãy hoặc tòa *<input name="building" [(ngModel)]="form.building" placeholder="Ví dụ: A" required /></label>}
+              <label>{{form.roomType === 'ZOOM' ? 'Phòng trực tuyến *' : 'Số phòng *'}}<input name="roomNumber" [(ngModel)]="form.roomNumber" [placeholder]="form.roomType === 'ZOOM' ? 'Ví dụ: ZOOM48' : 'Ví dụ: 101'" required /></label>
+            }
             <label>Loại phòng<select [(ngModel)]="form.roomType" [ngModelOptions]="{standalone:true}"><option value="UNKNOWN">Chưa xác định</option><option value="THEORY">Phòng lý thuyết</option><option value="ZOOM">Phòng Zoom</option><option value="COMPUTER">Phòng máy tính</option><option value="LAB">Phòng thí nghiệm</option><option value="PRACTICE">Phòng thực hành</option><option value="PE">Giáo dục thể chất</option><option value="DEFENSE">Quốc phòng – an ninh</option></select></label>
             <label>
               Vị trí
@@ -471,7 +471,7 @@ import {
           <div class="form-actions" [class.catalog-footer]="tab() === 'courses' || tab() === 'departments' || tab() === 'teachers'">
             <button
               type="submit"
-              [disabled]="saving() || ((tab() === 'courses' || tab() === 'teachers') && !editingId() && (!form.departmentId || !!departmentCodeError() || codePreviewLoading()))"
+              [disabled]="saving() || ((tab() === 'courses' || tab() === 'teachers') && !editingId() && (!form.departmentId || !!departmentCodeError()))"
             >
               {{
                 saving()
@@ -505,10 +505,7 @@ import {
           Bạn có chắc muốn ngừng hoạt động
           <b>
             {{
-              pendingDeactivate()
-                ?.code ||
-              pendingDeactivate()
-                ?.teacherCode
+              pendingDeactivate()?.name || pendingDeactivate()?.fullName
             }}
           </b>
           không?
@@ -605,30 +602,29 @@ export class ManagementComponent
     | null = null;
 
   managementSearch = '';
-  readonly codePreview=signal('');readonly codePreviewLoading=signal(false);readonly departmentCodeError=signal('');
-  private codePreviewRequest?:Subscription;
+  readonly departmentCodeError=signal('');
+  readonly codeLabel=displayBusinessCode;
+  readonly validAcademicYear=validAcademicYear; periodTouched=false;
+  normalizePeriod():void{this.form.startAcademicYear=normalizeAcademicYear(this.form.startAcademicYear??'');this.form.startSemester=normalizeSemester(this.form.startSemester??'');this.periodTouched=true;}
+  departmentName(id:number):string{return this.refs.departments.find((x:any)=>x.id===id)?.name??'Chưa thiết lập';}
   originalTeacherDepartmentId:number|null=null;
   sectionDescription():string{return CATALOG_TABS.find(x=>x.key===this.tab())?.description??'';}
   legacyTeacherCode(code:string):boolean{return !/^GV-[A-Z0-9]+(?:-[0-9]{2})?-[0-9]{4}$/.test(code??'');}
   teacherDepartmentChanged(id:number|null):void{
-    this.codePreviewRequest?.unsubscribe();this.form.departmentId=id;this.codePreview.set('');this.departmentCodeError.set('');this.codePreviewLoading.set(false);
+    this.form.departmentId=id;this.departmentCodeError.set('');
     if(this.editingId())return;
     this.form.userId=null;
     if(!id)return;
     const department=this.refs.departments.find((x:any)=>x.id===id);
     if(!department||!/^BM-[A-Z0-9]+(?:-[0-9]{2})?$/.test(department.code)||/^BM-[A-F0-9]{32}(?:-[0-9]{2})?$/.test(department.code)||department.code.length>36){this.departmentCodeError.set('Bộ môn chưa có mã hợp lệ. Vui lòng chuẩn hóa mã bộ môn trước khi thêm giảng viên.');return;}
-    this.codePreviewLoading.set(true);
-    this.codePreviewRequest=this.api.nextTeacherCode(id).subscribe({next:r=>{if(this.form.departmentId===id){this.codePreview.set(r.code);this.codePreviewLoading.set(false);}},error:e=>{if(this.form.departmentId===id){this.departmentCodeError.set(errorText(e));this.codePreviewLoading.set(false);}}});
   }
   courseDepartmentChanged(id:number|null):void{
-    this.codePreviewRequest?.unsubscribe();this.form.departmentId=id;this.codePreview.set('');this.departmentCodeError.set('');this.codePreviewLoading.set(false);
+    this.form.departmentId=id;this.departmentCodeError.set('');
     if(!id||this.editingId())return;
     const department=this.refs.departments.find((x:any)=>x.id===id);
     if(!department||!/^BM-[A-Z0-9]+(?:-[0-9]{2})?$/.test(department.code)||/^BM-[A-F0-9]{32}(?:-[0-9]{2})?$/.test(department.code)||department.code.length>36){
       this.departmentCodeError.set('Bộ môn chưa có mã hợp lệ. Vui lòng chuẩn hóa mã bộ môn trước khi tạo môn học.');return;
     }
-    this.codePreviewLoading.set(true);
-    this.codePreviewRequest=this.api.nextCourseCode(id).subscribe({next:r=>{if(this.form.departmentId===id){this.codePreview.set(r.code);this.codePreviewLoading.set(false);}},error:e=>{if(this.form.departmentId===id){this.departmentCodeError.set(errorText(e));this.codePreviewLoading.set(false);}}});
   }
   rosterQuery = '';
 
@@ -639,7 +635,7 @@ export class ManagementComponent
     const key = this.managementSearch.trim().toLowerCase();
     if (!key) return this.data();
     return this.data().filter((item) =>
-      [item.code, item.teacherCode, item.name, item.fullName, item.email, item.note]
+      [item.name, item.fullName, item.email, item.note, item.startAcademicYear, item.startSemester, this.departmentName(item.departmentId), ...(this.tab() === 'courses' ? [] : [item.code,item.teacherCode])]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(key)),
     );
@@ -696,7 +692,7 @@ export class ManagementComponent
     });
   }
 
-  ngOnDestroy(): void { this.catalogRequest?.unsubscribe(); this.codePreviewRequest?.unsubscribe(); }
+  ngOnDestroy(): void { this.catalogRequest?.unsubscribe(); }
 
   visibleTabs(): {key: Tab; label: string}[] {
     return visibleCatalogTabs(this.auth);
@@ -1022,7 +1018,7 @@ export class ManagementComponent
     this.message.set('');
     this.editorError.set('');
     this.editorFieldErrors.set({});
-    this.codePreviewRequest?.unsubscribe();this.codePreview.set('');this.departmentCodeError.set('');this.codePreviewLoading.set(false);
+    this.departmentCodeError.set('');
 
     this.editingId.set(
       item?.id ?? null,
@@ -1033,6 +1029,7 @@ export class ManagementComponent
           ...item,
         }
       : this.emptyForm();
+    delete this.form.code; delete this.form.teacherCode; this.periodTouched=false;
     this.originalTeacherDepartmentId=item?.departmentId??null;
 
     this.editorOpen.set(true);
@@ -1040,7 +1037,6 @@ export class ManagementComponent
 
   closeEditor(): void {
     if (!this.saving()) {
-      this.codePreviewRequest?.unsubscribe();
       this.editorOpen.set(false);
     }
   }
@@ -1051,7 +1047,7 @@ export class ManagementComponent
       note: '',
       credits: 3,
       capacity: 0,
-      code: '', teacherCode: '', roomType: 'UNKNOWN',
+      roomType: 'UNKNOWN', startAcademicYear: '', startSemester: '', campus:'', building:'', roomNumber:'',
       facultyId: null,
       departmentId: null,
       courseId: null,
@@ -1072,6 +1068,7 @@ export class ManagementComponent
       return;
     }
 
+    if(this.tab() === 'courses')this.normalizePeriod();
     const validationError =
       this.validateCatalog();
 
@@ -1088,7 +1085,8 @@ export class ManagementComponent
     this.message.set('');
 
     const payload={...this.form};
-    if(this.tab()==='courses'||this.tab()==='departments'||this.tab()==='teachers'){delete payload.code;delete payload.teacherCode;}
+    delete payload.code;delete payload.teacherCode;delete payload.startYear;delete payload.endYear;
+    if(this.tab() === 'student-classes')payload.startYear=this.form.startYear;
     this.api
       .saveCatalog(
         this.tab(),
@@ -1124,19 +1122,19 @@ export class ManagementComponent
   }
 
   validateCatalog(): string | null {
+    if(this.tab()==='courses'){
+      if(!validAcademicYear(this.form.startAcademicYear??''))return 'Năm học phải có dạng YYYY-YYYY và hai năm phải liên tiếp.';
+      if(!['HK1','HK2'].includes(this.form.startSemester))return 'Học kỳ chỉ nhận HK1 hoặc HK2.';
+    }
+    if(this.tab()==='student-classes'&&!this.editingId()&&(!this.form.departmentId||!Number.isInteger(this.form.startYear)))return 'Vui lòng chọn Bộ môn và nhập khóa để tạo lớp sinh hoạt.';
+    if(this.tab()==='rooms'&&!this.editingId()&&(!this.form.roomNumber||(this.form.roomType!=='ZOOM'&&(!this.form.campus||!this.form.building))))return 'Vui lòng bổ sung cơ sở, dãy hoặc tòa và số phòng; phòng trực tuyến cần tên phòng trực tuyến.';
     if (this.tab() === 'faculties' && !this.editingId() && (!String(this.form.initialDepartmentName ?? '').trim() || !this.form.initialHeadTeacherId))
       return 'Cần tên bộ môn đầu tiên và giảng viên hiện có làm Trưởng khoa.';
-    if(this.tab()==='courses'&&!this.editingId()&&(this.departmentCodeError()||this.codePreviewLoading()))return this.departmentCodeError()||'Đang lấy mã dự kiến. Vui lòng chờ.';
-    if(this.tab()==='teachers'&&!this.editingId()&&(this.departmentCodeError()||this.codePreviewLoading()))return this.departmentCodeError()||'Đang lấy mã dự kiến. Vui lòng chờ.';
+    if(this.tab()==='courses'&&!this.editingId()&&this.departmentCodeError())return this.departmentCodeError();
+    if(this.tab()==='teachers'&&!this.editingId()&&this.departmentCodeError())return this.departmentCodeError();
     if(this.tab()==='courses'&&(!Number.isInteger(Number(this.form.credits))||Number(this.form.credits)<1||Number(this.form.credits)>20))return 'Số tín chỉ cần từ 1 đến 20.';
     const isTeacher =
       this.tab() === 'teachers';
-
-    const code = String(
-      isTeacher
-        ? this.form.teacherCode ?? ''
-        : this.form.code ?? '',
-    ).trim();
 
     const name = String(
       isTeacher
@@ -1233,7 +1231,7 @@ export class ManagementComponent
         this.form.rtspUrl ?? '',
       ).trim()
     ) {
-      return 'Nguồn camera là bắt buộc (RTSP hoặc browser://laptop).';
+      return 'Vui lòng chọn nguồn camera phòng học hoặc camera trên thiết bị.';
     }
 
     return null;

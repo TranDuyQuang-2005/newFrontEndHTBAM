@@ -57,7 +57,7 @@ public sealed class AcademicSqlServerTests
         Assert.Equal("User edited teacher", (await verify.Teachers.SingleAsync(x => x.Id == dean.Id)).FullName);
         Assert.False((await verify.ManagementAssignmentsSet.SingleAsync(x => x.Id == position.Id)).IsActive);
         Assert.Equal(13, await verify.UsersSet.CountAsync(x => x.UserName.StartsWith("demo.")));
-        Assert.Equal(60, await verify.StudentsSet.CountAsync(x => x.StudentCode.StartsWith("DEMO-SV-")));
+        Assert.Equal(60, await verify.StudentsSet.CountAsync(x => x.StudentCode.StartsWith("SV-DEMO-") || x.StudentCode.StartsWith("DEMO-SV-")));
         Assert.Equal(12, await verify.ClassSections.CountAsync(x => x.SourceClassSectionCode != null && x.SourceClassSectionCode.StartsWith("DEMO-LHP-")));
         Assert.Equal(14, await verify.ClassSchedules.CountAsync());
         Assert.True(await verify.SessionsSet.AnyAsync(x => x.ScheduledStart > DateTime.UtcNow));
@@ -113,7 +113,7 @@ public sealed class AcademicSqlServerTests
         {
             await using var db=database.Context();
             var controller=AcademicSchedulingTests.With(new CatalogsController(db,new AcademicSchedulingTests.Audit()),9,"ADMIN");
-            return Assert.IsType<OkObjectResult>(await controller.AddRoom(new("CLIENT_CODE",$"Room {i}",null,10,null),CancellationToken.None));
+            return Assert.IsType<OkObjectResult>(await controller.AddRoom(new("CLIENT_CODE",$"Room {i}",null,10,null,Campus:"CS1",Building:"A",RoomNumber:(100+i).ToString()),CancellationToken.None));
         }));
         await using var verify=database.Context();
         var codes=await verify.Rooms.Select(x=>x.Code).ToArrayAsync();

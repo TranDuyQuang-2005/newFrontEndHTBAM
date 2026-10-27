@@ -51,6 +51,39 @@ public sealed class SessionOutputPersistenceTests
         Assert.Equal(0, cls.AlertCount);
     }
 
+    [Fact]
+    public async Task Class_summary_uses_duration_of_stored_events_even_when_identities_are_unknown()
+    {
+        await using var db = NewDb();
+        var started = new DateTime(2026, 10, 27, 8, 0, 0, DateTimeKind.Utc);
+        db.AttendancePoliciesSet.Add(new AttendancePolicy { Id = 1, Code = "P", Name = "Policy", PresentThreshold = .8m, PartialThreshold = .5m, PresentScore = 10, PartialScore = 5 });
+        db.SessionsSet.Add(new Session { Id = 30018, ClassSectionId = 1, OriginalTeacherId = 1, AttendancePolicyId = 1, ScheduledStart = started, StartedAt = started, Status = "FINALIZING" });
+        db.SessionStudentsSet.Add(new SessionStudent { SessionId = 30018, StudentId = 7 });
+        db.StableIdentitiesSet.AddRange(
+            new StableIdentity { Id = 1, SessionId = 30018, StableId = "unknown-1", IdentityStatus = "UNKNOWN", FirstSeenAt = started, LastSeenAt = started.AddSeconds(30) },
+            new StableIdentity { Id = 2, SessionId = 30018, StableId = "unknown-2", IdentityStatus = "UNKNOWN", FirstSeenAt = started, LastSeenAt = started.AddSeconds(30) });
+        var segments = new[]
+        {
+            (1L, "FOCUSED", 0, 10), (1L, "DISTRACTED", 10, 20), (1L, "ACTIVE", 20, 30),
+            (2L, "SLEEPY", 0, 10), (2L, "SLEEPY", 10, 20), (2L, "FOCUSED", 20, 30)
+        };
+        var index = 0;
+        foreach (var (identityId, label, from, to) in segments)
+            db.BehaviorEventsSet.Add(new BehaviorEvent { ExternalEventId = $"event-{++index}", SessionId = 30018, StableIdentityId = identityId, StudentId = null, Label = label, Probability = .9m, ObservationQuality = .8m, StartedAt = started.AddSeconds(from), EndedAt = started.AddSeconds(to), ModelVersion = "test", ThresholdVersion = "test" });
+        await db.SaveChangesAsync();
+
+        await new SummaryService(db).RebuildSessionAsync(30018, started.AddSeconds(30), CancellationToken.None);
+
+        var summary = await db.ClassSessionSummariesSet.SingleAsync(x => x.SessionId == 30018);
+        Assert.Equal(2, summary.ObservedStudentCount);
+        Assert.Equal(1m / 3m, summary.FocusedRatio);
+        Assert.Equal(1m / 6m, summary.DistractedRatio);
+        Assert.Equal(1m / 3m, summary.SleepyRatio);
+        Assert.Equal(1m / 6m, summary.ActiveRatio);
+        Assert.Equal(.8m, summary.CameraAiQuality);
+        Assert.All(await db.StudentSessionSummariesSet.ToListAsync(), x => Assert.Equal(0, x.FocusedRatio));
+    }
+
     private static AppDbContext NewDb() => new(new DbContextOptionsBuilder<AppDbContext>()
         .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
 }

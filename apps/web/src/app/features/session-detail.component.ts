@@ -12,7 +12,7 @@ import { BackButtonComponent, ModalComponent, PageTitleComponent, behaviorText, 
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <app-back-button to="/sessions" label="Quay lại danh sách buổi học" />
-    <app-page-title [title]="session()?.classSection ? session().classSection + ' · Buổi #' + sessionId : 'Buổi học #' + sessionId" [subtitle]="sessionSubtitle()">
+    <app-page-title [title]="session()?.classSection ? session().classSection : 'Chi tiết buổi học'" [subtitle]="sessionSubtitle()">
       <span class="badge" [class.blue]="realtimeState() === 'ONLINE'" [class.warning]="realtimeState() === 'CONNECTING'" [class.gray]="realtimeState() === 'OFFLINE'">{{ realtimeLabel() }}</span>
       <button type="button" class="secondary" (click)="load()">Cập nhật</button>
       @if (session()?.canOperate && (session()?.status === 'READY' || session()?.status === 'DRAFT')) { <button type="button" [disabled]="acting() || pendingAction() !== null" (click)="requestAction('start')">Bắt đầu</button> }
@@ -26,8 +26,8 @@ import { BackButtonComponent, ModalComponent, PageTitleComponent, behaviorText, 
     @if (dashboardError()) { <div class="error-box">Bảng theo dõi: {{ dashboardError() }}</div> }
     @if (message()) { <div class="success-box">{{ message() }}</div> }
     @if (loading()) { <div class="notice">Đang tải dữ liệu buổi học…</div> }
-    @if (session()?.status === 'FINALIZING') { <div class="notice">Đang kết thúc buổi học: AI đang xử lý các chunk đã nhận và ghi bền vững dữ liệu cuối. Bạn có thể rời trang; hệ thống sẽ tiếp tục hoàn tất.</div> }
-    @if (session()?.status === 'FINALIZE_FAILED') { <div class="error-box">Lần hoàn tất trước chưa thành công. Dữ liệu đã nhận vẫn được giữ; bấm “Thử hoàn tất lại” để tiếp tục.</div> }
+    @if (session()?.status === 'FINALIZING') { <div class="notice">Hệ thống đang tổng hợp dữ liệu cuối buổi học. Bạn có thể rời trang; quá trình này vẫn tiếp tục.</div> }
+    @if (session()?.status === 'FINALIZE_FAILED') { <div class="error-box"><strong>Chưa thể hoàn tất buổi học.</strong><br />Dữ liệu đã nhận vẫn được giữ. Bấm “Thử hoàn tất lại” để tiếp tục.</div> }
 
     @if (dashboard()) {
       <div class="stats stats-four">
@@ -45,10 +45,10 @@ import { BackButtonComponent, ModalComponent, PageTitleComponent, behaviorText, 
 
       <div class="dashboard-grid">
         <section class="card" style="min-height:360px">
-          <div class="card-header" style="margin:-20px -20px 18px"><div><h3>Nguồn phân tích</h3><p>{{ isBrowserCamera() ? 'Camera laptop qua trình duyệt' : session()?.cameraId ? 'Camera RTSP' : 'Video tải lên' }}</p></div><span class="badge" [class.warning]="isBrowserCamera() ? browserCameraState() !== 'STREAMING' : dashboard().cameraHealth !== 'ONLINE'">{{ isBrowserCamera() ? browserCameraStateText() : statusText(dashboard().cameraHealth) }}</span></div>
+          <div class="card-header" style="margin:-20px -20px 18px"><div><h3>Nguồn phân tích</h3><p>{{ isBrowserCamera() ? 'Camera trên thiết bị' : session()?.cameraId ? 'Camera phòng học' : 'Video tải lên' }}</p></div><span class="badge" [class.warning]="isBrowserCamera() ? browserCameraState() !== 'STREAMING' : dashboard().cameraHealth !== 'ONLINE'">{{ isBrowserCamera() ? browserCameraStateText() : statusText(dashboard().cameraHealth) }}</span></div>
           @if (isBrowserCamera()) {
             <div style="display:grid;gap:12px">
-              <!-- HTBAM_REALTIME_CANVAS_OVERLAY -->
+              <!-- Lớp hiển thị kết quả theo thời gian thực -->
         <div style="position:relative;width:100%;line-height:0">
           <video #browserPreview autoplay muted playsinline style="width:100%;max-height:430px;background:#0f172a;border-radius:12px;object-fit:contain" [style.display]="cameraViewMode() === 'live' || !aiPreviewUrl() ? 'block' : 'none'"></video>
           <canvas #realtimeOverlay [style.display]="cameraViewMode() === 'live' ? 'block' : 'none'"
@@ -56,20 +56,20 @@ import { BackButtonComponent, ModalComponent, PageTitleComponent, behaviorText, 
           @if (cameraViewMode() === 'live') {
             <div style="position:absolute;left:12px;bottom:12px;display:flex;gap:8px;align-items:center;padding:6px 10px;border-radius:999px;background:rgba(15,23,42,.78);color:white;font-size:12px;line-height:1.2;pointer-events:none">
               <span style="width:7px;height:7px;border-radius:50%;background:#22c55e"></span>
-              LIVE AI · {{ fastOverlayLatencyMs() == null ? 'đang khởi tạo' : fastOverlayLatencyMs() + ' ms' }}
+              Trực tiếp · {{ fastOverlayPeople() }} người đang được theo dõi
             </div>
           }
         </div>
-        <!-- HTBAM_AI_PREVIEW_UI -->
+        <!-- Khung hình đã xử lý -->
         @if (cameraViewMode() === 'ai' && aiPreviewUrl()) {
-          <img [src]="aiPreviewUrl()!" alt="Khung hình AI đã phân tích"
+          <img [src]="aiPreviewUrl()!" alt="Khung hình đã phân tích"
                style="display:block;width:100%;aspect-ratio:16/9;object-fit:contain;background:#0f172a;border-radius:12px" />
         }
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px">
-          <button type="button" class="secondary" (click)="cameraViewMode.set('live')">Trực tiếp + AI</button>
-          <button type="button" class="secondary" (click)="cameraViewMode.set('ai')">Khung AI đã xử lý</button>
+          <button type="button" class="secondary" (click)="cameraViewMode.set('live')">Xem trực tiếp</button>
+          <button type="button" class="secondary" (click)="cameraViewMode.set('ai')">Xem khung hình đã xử lý</button>
           @if (cameraViewMode() === 'ai') {
-            <small style="color:#64748b">{{ aiPreviewUrl() ? 'BBox và nhãn bám đúng khung hình AI đã xử lý.' : 'Đang chờ khung hình AI đầu tiên…' }}</small>
+            <small style="color:#64748b">{{ aiPreviewUrl() ? 'Khung hình hiển thị kết quả phân tích gần nhất.' : 'Đang chờ khung hình đầu tiên…' }}</small>
           }
         </div>
 
@@ -78,20 +78,20 @@ import { BackButtonComponent, ModalComponent, PageTitleComponent, behaviorText, 
               @if (browserCameraState() === 'ERROR') { <div class="error-box">{{ browserCameraError() }}</div> }
             </div>
           } @else {
-            <div class="empty-state"><div><div class="upload-icon">▶</div><strong>Luồng hình ảnh được xử lý bởi dịch vụ AI</strong><span>Nguồn RTSP/video được AI xử lý ở backend.</span></div></div>
+            <div class="empty-state"><div><div class="upload-icon">▶</div><strong>Hình ảnh đang được phân tích</strong><span>Nguồn camera hoặc video được hệ thống xử lý tự động.</span></div></div>
           }
         </section>
 
         <section class="card">
-          <div class="card-header" style="margin:-20px -20px 18px"><div><h3>Phân tích AI</h3><p>Cập nhật {{ date(dashboard().generatedAt) }}</p></div><span class="badge purple">{{ statusText(dashboard().aiHealth) }}</span></div>
+          <div class="card-header" style="margin:-20px -20px 18px"><div><h3>Phân tích lớp học</h3><p>Cập nhật {{ date(dashboard().generatedAt) }}</p></div><span class="badge purple">{{ statusText(dashboard().aiHealth) }}</span></div>
           @for (metric of behaviorMetrics(); track metric.label) {
             <div class="metric-row"><span>{{ metric.label }}</span><div class="progress-track"><div class="progress-value" [style.width.%]="metric.value" [style.background]="metric.color"></div></div><strong>{{ metric.value }}%</strong></div>
           }
           <div class="service-grid service-grid-two" style="margin-top:22px">
-            <div class="service-card"><span class="status-dot" [style.background]="modelLoaded('HTBAM-X:') ? '#16a34a' : '#dc2626'"></span><div><strong>HTBAM-X</strong><small>{{ modelLoaded('HTBAM-X:') ? modelName('HTBAM-X:') : 'Chưa tải' }}</small></div></div>
-            <div class="service-card"><span class="status-dot" [style.background]="modelLoaded('ArcFace/') ? '#16a34a' : '#dc2626'"></span><div><strong>ArcFace</strong><small>{{ modelLoaded('ArcFace/') ? modelName('ArcFace/') : 'Chưa tải' }}</small></div></div>
-            <div class="service-card"><span class="status-dot" [style.background]="dashboard().modelReady ? '#16a34a' : '#dc2626'"></span><div><strong>Pipeline buổi học</strong><small>{{ dashboard().modelReady ? 'Sẵn sàng' : 'Chưa sẵn sàng' }}</small></div></div>
-            <div class="service-card"><span class="status-dot" [style.background]="dashboard().aiHealth === 'ONLINE' ? '#16a34a' : '#dc2626'"></span><div><strong>Dịch vụ AI</strong><small>{{ statusText(dashboard().aiHealth) }}</small></div></div>
+            <div class="service-card"><span class="status-dot" [style.background]="dashboard().modelReady ? '#16a34a' : '#dc2626'"></span><div><strong>Nhận biết hành vi</strong><small>{{ dashboard().modelReady ? 'Sẵn sàng' : 'Chưa sẵn sàng' }}</small></div></div>
+            <div class="service-card"><span class="status-dot" [style.background]="(dashboard().loadedModels?.length || 0) > 1 ? '#16a34a' : '#dc2626'"></span><div><strong>Nhận diện sinh viên</strong><small>{{ (dashboard().loadedModels?.length || 0) > 1 ? 'Sẵn sàng' : 'Chưa sẵn sàng' }}</small></div></div>
+            <div class="service-card"><span class="status-dot" [style.background]="dashboard().modelReady ? '#16a34a' : '#dc2626'"></span><div><strong>Phân tích buổi học</strong><small>{{ dashboard().modelReady ? 'Sẵn sàng' : 'Chưa sẵn sàng' }}</small></div></div>
+            <div class="service-card"><span class="status-dot" [style.background]="dashboard().aiHealth === 'ONLINE' ? '#16a34a' : '#dc2626'"></span><div><strong>Dịch vụ phân tích</strong><small>{{ statusText(dashboard().aiHealth) }}</small></div></div>
           </div>
         </section>
       </div>
@@ -100,15 +100,14 @@ import { BackButtonComponent, ModalComponent, PageTitleComponent, behaviorText, 
         <div class="card-header"><div><h3>Hành vi sinh viên theo thời gian thực</h3><p>Dữ liệu nhận diện và hành vi gần nhất</p></div></div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Mã định danh</th><th>Luồng theo dõi</th><th>Sinh viên</th><th>Nhận diện</th><th>Hành vi hiện tại</th><th>Độ tin cậy</th><th>Lần cuối</th></tr></thead>
+            <thead><tr><th>Đối tượng</th><th>Trạng thái nhận diện</th><th>Hành vi hiện tại</th><th>Cập nhật lần cuối</th></tr></thead>
             <tbody>
-              @for (row of dashboard().identities; track row.id) {
+              @for (row of dashboard().identities; track row.id; let index = $index) {
                 <tr>
-                  <td class="cell-title">{{ row.stableId }}</td><td>{{ row.currentTrackId || '—' }}</td><td>{{ row.studentId ? '#' + row.studentId : 'Chưa xác định' }}</td>
-                  <td>{{ percent(row.identityConfidence) }}</td><td><span class="badge blue">{{ behaviorLabel(row.currentBehavior) }}</span></td>
-                  <td>{{ percent(row.behaviorProbability) }}</td><td>{{ date(row.lastSeenAt) }}</td>
+                  <td class="cell-title">Đối tượng {{ index + 1 }}</td><td>{{ row.studentId ? 'Đã xác định sinh viên' : 'Chưa xác định' }}</td>
+                  <td><span class="badge blue">{{ behaviorLabel(row.currentBehavior) }}</span></td><td>{{ date(row.lastSeenAt) }}</td>
                 </tr>
-              } @empty { <tr><td colspan="7" class="empty">{{ session()?.status === 'COMPLETED' ? 'Không ghi nhận danh tính từ pipeline trong buổi học này.' : 'Chưa có identity đang hoạt động.' }}</td></tr> }
+              } @empty { <tr><td colspan="4" class="empty">{{ session()?.status === 'COMPLETED' ? 'Không có dữ liệu nhận diện trong buổi học này.' : 'Chưa có đối tượng đang được theo dõi.' }}</td></tr> }
             </tbody>
           </table>
         </div>
@@ -227,9 +226,9 @@ export class SessionDetailComponent implements OnInit, OnDestroy {
         recoveringCompleted
           ? 'Đã kiểm tra lại đầu ra còn tồn tại và tạo lại báo cáo từ dữ liệu đã lưu.'
           : action === 'start' && this.isBrowserCamera()
-          ? 'Buổi học đã bắt đầu. Camera laptop đang truyền hình ảnh tới AI.'
+          ? 'Buổi học đã bắt đầu. Camera đang truyền hình ảnh để phân tích.'
           : action === 'stop' || action === 'retry-finalize'
-            ? 'Đã ghi nhận yêu cầu kết thúc. Hệ thống đang hoàn tất dữ liệu AI.'
+            ? 'Đã ghi nhận yêu cầu kết thúc. Hệ thống đang hoàn tất dữ liệu.'
             : 'Đã cập nhật trạng thái buổi học.'
       );
       this.load();
@@ -364,7 +363,7 @@ export class SessionDetailComponent implements OnInit, OnDestroy {
     }
     this.browserCaptureActive = false;
     this.browserCameraState.set('ERROR');
-    this.browserCameraError.set(`Không gửi được chunk #${index} tới AI sau nhiều lần thử: ${errorText(lastError)}`);
+    this.browserCameraError.set(`Không thể gửi dữ liệu camera để phân tích. ${errorText(lastError)}`);
     throw lastError;
   }
 
@@ -400,13 +399,11 @@ export class SessionDetailComponent implements OnInit, OnDestroy {
     if (uploadFailure) throw uploadFailure;
   }
 
-  modelLoaded(prefix: string): boolean { return (this.dashboard()?.loadedModels ?? []).some((x: string) => x.startsWith(prefix)); }
-  outputEntries(): Array<{key:string;label:string;status:string;count:number;message:string}> { const source=this.dashboard()?.outputs??{}; const labels:Record<string,string>={video:'Video',behaviorEvents:'Sự kiện hành vi',alerts:'Cảnh báo',identities:'Danh tính',attendance:'Chuyên cần',summaries:'Báo cáo tổng hợp'}; return Object.entries(source).map(([key,value]:[string,any])=>({key,label:labels[key]??key,status:value?.status??'EMPTY',count:Number(value?.count??0),message:String(value?.message??'')})); }
+  outputEntries(): Array<{key:string;label:string;status:string;count:number;message:string}> { const source=this.dashboard()?.outputs??{}; const labels:Record<string,string>={video:'Video',behaviorEvents:'Sự kiện hành vi',alerts:'Cảnh báo',identities:'Dữ liệu nhận diện',attendance:'Chuyên cần',summaries:'Báo cáo tổng hợp'}; return Object.entries(source).map(([key,value]:[string,any])=>{const status=value?.status??'EMPTY';const count=Number(value?.count??0);return{key,label:labels[key]??'Dữ liệu buổi học',status,count,message:status==='AVAILABLE'?`${count} bản ghi đã sẵn sàng`:'Chưa có dữ liệu'}}); }
   hasMissingOutputs(): boolean { const outputs=this.dashboard()?.outputs; return !!outputs && (outputs.video?.status === 'NOT_CREATED' || outputs.summaries?.status !== 'AVAILABLE'); }
-  modelName(prefix: string): string { return (this.dashboard()?.loadedModels ?? []).find((x: string) => x.startsWith(prefix)) ?? 'Đã tải'; }
-  realtimeLabel(): string { return ({ CONNECTING: 'Đang kết nối realtime', ONLINE: 'Realtime trực tuyến', OFFLINE: 'Realtime gián đoạn' } as const)[this.realtimeState()]; }
+  realtimeLabel(): string { return ({ CONNECTING: 'Đang kết nối', ONLINE: 'Đang cập nhật trực tiếp', OFFLINE: 'Cập nhật bị gián đoạn' } as const)[this.realtimeState()]; }
   actionTitle(): string { return this.pendingAction() === 'start' ? 'Bắt đầu buổi học' : this.pendingAction() === 'retry-finalize' ? 'Thử hoàn tất lại' : 'Kết thúc buổi học'; }
-  actionMessage(): string { return this.pendingAction() === 'start' ? 'Bắt đầu luồng phân tích AI cho buổi học này?' : this.pendingAction() === 'retry-finalize' ? (this.session()?.status === 'COMPLETED' ? 'Tạo lại báo cáo từ dữ liệu đã lưu và chỉ đăng ký video nếu artifact thật vẫn còn?' : 'Gửi lại yêu cầu hoàn tất mà không tạo job AI mới?') : 'Kết thúc nhận dữ liệu mới và tiến hành tổng hợp các chunk đã gửi?'; }
+  actionMessage(): string { return this.pendingAction() === 'start' ? 'Bắt đầu phân tích cho buổi học này?' : this.pendingAction() === 'retry-finalize' ? (this.session()?.status === 'COMPLETED' ? 'Tạo lại báo cáo từ dữ liệu đã lưu?' : 'Gửi lại yêu cầu hoàn tất buổi học?') : 'Kết thúc nhận dữ liệu mới và tổng hợp kết quả buổi học?'; }
 
   private scheduleFinalizeRefresh(): void {
     if (this.refreshTimer) return;
@@ -472,11 +469,10 @@ export class SessionDetailComponent implements OnInit, OnDestroy {
       const stable=d.stableId as string|null;
       const row=stable?(this.dashboard()?.identities??[]).find((r:any)=>r.stableId===stable):null;
       const behavior=String(d.behavior??row?.currentBehavior??'').toUpperCase();
-      const prob=d.behaviorProbability??row?.behaviorProbability??null;
       const color=colors[behavior]??'#22c55e';
-      const identity=d.studentId?`SV#${d.studentId}`:stable||`LIVE-T${d.trackId??'?'}`;
+      const identity=d.studentId?'Sinh viên':'Đối tượng';
       const name=behavior?this.behaviorLabel(behavior):'Đang theo dõi';
-      const label=`${identity} · ${name}${prob==null?'':` · ${Math.round(Number(prob)*100)}%`}`;
+      const label=`${identity} · ${name}`;
       ctx.strokeStyle=color;ctx.lineWidth=2.5;ctx.strokeRect(x,y,w,h);
       ctx.font='600 13px Inter, Arial, sans-serif';const tw=ctx.measureText(label).width,lh=25,ly=Math.max(0,y-lh);
       ctx.fillStyle=color;ctx.fillRect(x,ly,Math.min(cw-x,tw+16),lh);ctx.fillStyle='#fff';ctx.textBaseline='middle';ctx.fillText(label,x+8,ly+lh/2);

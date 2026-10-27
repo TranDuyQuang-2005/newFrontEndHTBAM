@@ -9,12 +9,12 @@ import { PageTitleComponent, errorText } from '../shared/ui';
   imports: [PageTitleComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <app-page-title title="Trạng thái hệ thống" subtitle="Theo dõi sức khỏe các thành phần của HTBAM.">
+    <app-page-title title="Trạng thái hệ thống" subtitle="Theo dõi khả năng hoạt động của Hệ thống giám sát.">
       <button type="button" class="secondary" (click)="load()">Cập nhật</button>
     </app-page-title>
     @if (error()) { <div class="error-box">{{ error() }}</div> }
-    @if (capabilitiesError()) { <div class="error-box">Capabilities: {{ capabilitiesError() }}</div> }
-    @if (countsError()) { <div class="error-box">Counts: {{ countsError() }}</div> }
+    @if (capabilitiesError()) { <div class="error-box">Không thể kiểm tra chức năng hệ thống: {{ capabilitiesError() }}</div> }
+    @if (countsError()) { <div class="error-box">Không thể tải số liệu tổng quan: {{ countsError() }}</div> }
     <div class="service-grid">
       @for (service of services(); track service.name) {
         <section class="card" style="margin:0">
@@ -29,13 +29,13 @@ import { PageTitleComponent, errorText } from '../shared/ui';
       }
     </div>
     <section class="card" style="margin-top:18px">
-      <div class="card-header" style="margin:-20px -20px 18px"><div><h3>Năng lực AI</h3><p>Thông tin do API capabilities cung cấp</p></div></div>
+      <div class="card-header" style="margin:-20px -20px 18px"><div><h3>Khả năng xử lý</h3><p>Các chức năng đang sẵn sàng</p></div></div>
       <div class="kv">
         <span>Phân tích buổi học</span><b>{{ caps()?.sessionInference ? 'Sẵn sàng' : 'Chưa sẵn sàng' }}</b>
         <span>Đăng ký khuôn mặt</span><b>{{ caps()?.faceEnrollment ? 'Sẵn sàng' : 'Chưa sẵn sàng' }}</b>
-        <span>Xuất video Annotations</span><b>{{ caps()?.annotatedVideoOutput ? 'Sẵn sàng' : 'Chưa sẵn sàng' }}</b>
-        <span>Nhà cung cấp LLM</span><b>{{ caps()?.llmProvider || 'Chưa cấu hình' }}</b>
-        <span>Loaded models</span><b>{{ caps()?.loadedModels?.join(', ') || '-' }}</b>
+        <span>Xuất video có chú thích</span><b>{{ caps()?.annotatedVideoOutput ? 'Sẵn sàng' : 'Chưa sẵn sàng' }}</b>
+        <span>Tạo nhận xét tự động</span><b>{{ caps()?.llmProvider && caps()?.llmProvider !== 'NOT_CONFIGURED' ? 'Sẵn sàng' : 'Chưa cấu hình' }}</b>
+        <span>Mô hình phân tích</span><b>{{ caps()?.loadedModels?.length ? caps()!.loadedModels.length + ' mô hình sẵn sàng' : 'Chưa sẵn sàng' }}</b>
       </div>
     </section>
   `,
@@ -67,12 +67,12 @@ export class SystemComponent implements OnInit {
     const c = this.caps();
     if (!c) return [];
     return [
-      { name: 'Backend', description: 'ASP.NET Core API', ok: c.backend },
-      { name: 'Database', description: 'SQL Server', ok: c.database },
-      { name: 'MinIO', description: 'Object Storage', ok: c.objectStorage },
-      { name: 'Dịch vụ AI', description: 'FastAPI và mô hình AI', ok: c.aiHealth },
+      { name: 'Máy chủ ứng dụng', description: 'Xử lý yêu cầu của người dùng', ok: c.backend },
+      { name: 'Cơ sở dữ liệu', description: 'Lưu trữ dữ liệu nghiệp vụ', ok: c.database },
+      { name: 'Kho tệp', description: 'Lưu trữ video và hình ảnh', ok: c.objectStorage },
+      { name: 'Phân tích lớp học', description: 'Phân tích hình ảnh và hành vi', ok: c.aiHealth },
       { name: 'Nhận diện khuôn mặt', description: 'Đăng ký và nhận diện khuôn mặt', ok: c.faceEnrollment },
-      { name: 'Nhà cung cấp LLM', description: c.llmProvider || 'Chưa cấu hình', ok: c.llmProvider !== 'NOT_CONFIGURED' },
+      { name: 'Nhận xét tự động', description: c.llmProvider !== 'NOT_CONFIGURED' ? 'Đã sẵn sàng' : 'Chưa cấu hình', ok: c.llmProvider !== 'NOT_CONFIGURED' },
     ];
   }
 }

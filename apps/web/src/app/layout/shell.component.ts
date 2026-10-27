@@ -25,6 +25,7 @@ import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
 import { OverlayFocus } from '../shared/overlay-focus';
 import { catalogBreadcrumb } from '../shared/catalog-navigation';
+import { NotificationCenterComponent } from '../shared/notification-center.component';
 
 interface NavigationItem {
   to: string;
@@ -38,13 +39,13 @@ interface NavigationItem {
 @Component({
   selector: 'app-shell',
   standalone: true,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, NotificationCenterComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="shell" [class.collapsed]="collapsed() && !mobile()">
       <aside #sidebar id="sidebar" class="sidebar" [class.open]="menuOpen()"
         [attr.role]="menuOpen() ? 'dialog' : null" [attr.aria-modal]="menuOpen() ? 'true' : null"
-        aria-label="Thanh điều hướng HTBAM" tabindex="-1">
+        aria-label="Thanh điều hướng Hệ thống giám sát" tabindex="-1">
         <button
           type="button"
           class="sidebar-collapse"
@@ -57,14 +58,9 @@ interface NavigationItem {
         </button>
 
         <div class="sidebar-header">
-          <div class="brand-mark" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3">
-              <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
-              <circle cx="12" cy="12" r="3" />
-            </svg>
-          </div>
+          <img class="huit-logo" src="assets/huit-logo.png" width="52" height="52" alt="Logo Trường Đại học Công Thương Thành phố Hồ Chí Minh" title="Hệ thống giám sát lớp học - Khoa Công nghệ Thông tin HUIT" />
           <div class="brand-copy">
-            <strong>HTBAM</strong>
+            <strong>Hệ thống giám sát</strong>
             <small>Hệ thống theo dõi, phát hiện và đánh giá hành vi sinh viên</small>
           </div>
           <button type="button" class="drawer-close icon-button" aria-label="Đóng menu" (click)="closeMenu()">×</button>
@@ -161,15 +157,16 @@ interface NavigationItem {
               <span class="pulse-dot" aria-hidden="true"></span>
               {{ systemOk() === null ? 'Đang kiểm tra' : systemOk() ? 'Hệ thống ổn định' : 'Cần kiểm tra' }}
             </span>
+            <app-notification-center [demo]="!!developmentWarning()" />
             @if (auth.isLoggedIn() && !auth.isAdmin()) {
-            <a routerLink="/alerts" class="icon-button button-link" aria-label="Cảnh báo" title="Cảnh báo">
+            <a routerLink="/alerts" class="icon-button button-link" aria-label="Cảnh báo nghiệp vụ" title="Cảnh báo nghiệp vụ">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg>
             </a>
             }
             <div class="avatar" [title]="auth.user().fullName || ''">{{ initials() }}</div>
           </div>
         </header>
-        <section class="content">@if (developmentWarning()) { <p class="notice warning" role="status">{{ developmentWarning() }}. Các mục DEMO và kết quả tổng hợp giả lập chỉ dùng để kiểm thử.</p> }<router-outlet /></section>
+        <section class="content"><router-outlet /></section>
       </main>
 
       @if (menuOpen()) {
@@ -216,7 +213,7 @@ export class ShellComponent implements OnInit, OnDestroy {
   ];
 
   readonly initials = computed(() => {
-    const name = this.auth.user().fullName || this.auth.user().userName || 'HTBAM';
+    const name = this.auth.user().fullName || this.auth.user().userName || 'Hệ thống giám sát';
     return name.split(/\s+/).filter(Boolean).slice(-2).map((part) => part[0]?.toUpperCase()).join('');
   });
 

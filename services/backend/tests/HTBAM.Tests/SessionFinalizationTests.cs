@@ -65,6 +65,31 @@ public sealed class SessionFinalizationTests
     }
 
     [Fact]
+    public async Task Retry_reissues_stop_when_ai_previous_finalize_failed()
+    {
+        await using var db = NewDb();
+        await SeedRunning(db);
+        var session = (await db.SessionsSet.FindAsync(30025L))!;
+        var job = (await db.AnalysisJobsSet.FindAsync(20005L))!;
+        session.Status = "FINALIZE_FAILED";
+        job.Status = "FINALIZE_FAILED";
+        job.ErrorMessage = "AI finalize thất bại: TimeoutError: worker did not drain";
+        await db.SaveChangesAsync();
+        var ai = new FinalizeAi();
+        ai.PollResults.Enqueue(new("job-30025", "FINALIZE_FAILED", null, "worker did not drain"));
+        ai.StopResults.Enqueue(new("job-30025", "COMPLETED"));
+        var service = new SessionService(db, ai, new CountingSummary(), new NoopStorage());
+
+        await service.RetryFinalizeAsync(30025, CancellationToken.None);
+        Assert.Equal([30025L], await service.ProcessPendingFinalizationsAsync(CancellationToken.None));
+
+        Assert.Equal("COMPLETED", session.Status);
+        Assert.Equal("COMPLETED", job.Status);
+        Assert.Equal(1, ai.StopCalls);
+        Assert.Single(await db.AnalysisJobsSet.ToListAsync());
+    }
+
+    [Fact]
     public async Task Session_is_not_completed_until_summary_persistence_finishes()
     {
         await using var db = NewDb();

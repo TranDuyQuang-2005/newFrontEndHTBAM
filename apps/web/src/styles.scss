@@ -2033,3 +2033,38 @@ app-catalog-section-header { display:block; min-width:0; }
 .pagination button { min-height: 32px; }
 .pagination { flex-wrap: wrap; }
 @media (max-width: 767px) { .details-grid { grid-template-columns: 1fr; } }
+
+/* HUIT identity and shared subject editor. */
+.sidebar-header .huit-logo{display:block;width:52px;height:52px;object-fit:contain;flex:0 0 52px;}
+.sidebar-header{gap:12px;min-height:88px;}
+.brand-copy{min-width:0;}.brand-copy small{font-size:11px;}
+.collapsed .sidebar-header .huit-logo{width:40px;height:40px;flex-basis:40px;}
+.topbar{overflow:visible;}
+.course-period{display:grid;grid-template-columns:1fr 1fr;gap:16px;min-width:0;}
+.course-period label{min-width:0;}
+@media(max-width:600px){.course-period{grid-template-columns:1fr;}.sidebar-header{padding-right:48px;}.sidebar-header .huit-logo{max-width:52px;}.drawer-close{position:absolute;right:12px;}.catalog-note{display:none;}}
+
+.login-brand .huit-logo{object-fit:contain;flex:0 0 52px;}
+
+/* A single HUIT asset is used for both full-size and compact system identity. */
+.login-brand { color: inherit; text-decoration: none; }
+.compact-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+.compact-brand__logo {
+  display: block;
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+  flex: 0 0 26px;
+}
+.compact-brand__name { color: inherit; font-weight: 600; white-space: nowrap; }
+.compact-brand__copy { min-width: 0; }
+.login-mobile-brand { display: none; min-height: 52px; }
+@media(max-width:1023px) { .login-mobile-brand { display: inline-flex; } }
+@media(max-width:360px) { .login-mobile-brand .compact-brand__copy { display: none; } }

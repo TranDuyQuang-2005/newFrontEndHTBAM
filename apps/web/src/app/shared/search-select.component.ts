@@ -3,7 +3,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, ElementRef, HostListener, Input, OnChanges, OnDestroy, ViewChild, forwardRef, inject, signal } from '@angular/core';
 import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
 import { Subscription } from 'rxjs';
-import { errorText } from './ui';
+import { displayBusinessCode, errorText } from './ui';
 
 export interface LookupOption { id: number; code: string; name: string; isActive: boolean; }
 
@@ -28,7 +28,7 @@ export interface LookupOption { id: number; code: string; name: string; isActive
             <div role="option" class="search-select-option" [id]="panelId + '-' + i"
               [class.highlighted]="active() === i" [attr.aria-selected]="option.id === value"
               [attr.aria-disabled]="!option.isActive" (mouseenter)="active.set(i)" (click)="choose(option)">
-              <strong>{{ option.code }}</strong><span>{{markLegacyDepartments ? '— ' : ''}}{{ option.name }}</span>
+              @if(resource !== 'courses'){<strong>{{ codeLabel(option.code) }}</strong>}<span>{{markLegacyDepartments ? '— ' : ''}}{{ option.name }}</span>
               @if (markLegacyDepartments && legacyDepartment(option.code)) { <small class="badge">Mã cũ</small> }
               @if (!option.isActive) { <small>Ngừng sử dụng</small> }
             </div>
@@ -55,6 +55,8 @@ export class SearchSelectComponent implements ControlValueAccessor, OnChanges, O
   @Input() boundToModal = false;
   @Input() constrainWidth = false;
   @Input() markLegacyDepartments = false;
+  readonly codeLabel=displayBusinessCode;
+  optionLabel(option:LookupOption):string{return this.resource==='courses'?option.name:`${displayBusinessCode(option.code)} · ${option.name}`;}
   legacyDepartment(code:string):boolean{return !/^BM-[A-Z0-9]+(?:-[0-9]{2})?$/.test(code)||/^BM-[A-F0-9]{32}(?:-[0-9]{2})?$/.test(code)||code.length>36;}
   @ViewChild('input', { static: true }) private input?: ElementRef<HTMLInputElement>;
   @ViewChild('panel', { static: true }) private panel?: ElementRef<HTMLElement>;
@@ -127,7 +129,7 @@ export class SearchSelectComponent implements ControlValueAccessor, OnChanges, O
 
   choose(option: LookupOption): void {
     if (!option.isActive) return;
-    this.value = option.id; this.display.set(`${option.code} · ${option.name}`); this.changed(option.id); this.touched();
+    this.value = option.id; this.display.set(this.optionLabel(option)); this.changed(option.id); this.touched();
     this.close(); this.input?.nativeElement.focus();
   }
 
@@ -179,7 +181,7 @@ export class SearchSelectComponent implements ControlValueAccessor, OnChanges, O
     if (this.selectedLabel) this.display.set(this.selectedLabel);
     if (!this.resource) return;
     this.labelRequest = this.http.get<{ items: LookupOption[] }>(`/api/lookups/${this.resource}`, { params: this.params().set('id', this.value) }).subscribe({
-      next: (result) => { const item = result.items[0]; if (item) this.display.set(`${item.code} · ${item.name}${item.isActive ? '' : ' (ngừng sử dụng)'}`); },
+      next: (result) => { const item = result.items[0]; if (item) this.display.set(this.optionLabel(item)+(item.isActive ? '' : ' (ngừng sử dụng)')); },
       error: () => this.display.set(this.selectedLabel || `#${this.value}`),
     });
   }

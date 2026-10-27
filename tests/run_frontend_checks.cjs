@@ -2,7 +2,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const root = path.resolve(__dirname, '..');
 for (const args of [
-  ['--test', 'tests/overlay_focus_check.js', 'tests/search_select_check.js', 'tests/class_section_ui_check.js'],
+  ['--test', 'tests/overlay_focus_check.js', 'tests/search_select_check.js', 'tests/class_section_ui_check.js', 'tests/hwng_integration_check.js', 'tests/report_export_llm_check.js'],
   ['tests/frontend_syntax_check.js'],
   ['tests/timetable_source_check.js'],
   ['database/sync-sqlserver.cjs', '--check'],

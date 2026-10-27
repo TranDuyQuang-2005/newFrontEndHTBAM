@@ -52,7 +52,7 @@ public sealed class ManagementAssignment : Entity
     public string? Note { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
-public sealed class Course : Entity { public string Code { get; set; } = ""; public string Name { get; set; } = ""; public long? DepartmentId { get; set; } public int Credits { get; set; } = 3; public string? Note { get; set; } public bool IsActive { get; set; } = true; }
+public sealed class Course : Entity { public int? StartYear { get; set; } public int? EndYear { get; set; } public string? StartSemester { get; set; } public string? StartAcademicYear => StartYear.HasValue && EndYear.HasValue ? $"{StartYear:D4}-{EndYear:D4}" : null; public string Code { get; set; } = ""; public string Name { get; set; } = ""; public long? DepartmentId { get; set; } public int Credits { get; set; } = 3; public string? Note { get; set; } public bool IsActive { get; set; } = true; }
 public sealed class ClassSection : Entity { public string Code { get; set; } = ""; public string Name { get; set; } = ""; public long CourseId { get; set; } public Course Course { get; set; } = null!; public long TeacherId { get; set; } public Teacher Teacher { get; set; } = null!; public string Semester { get; set; } = ""; public string AcademicYear { get; set; } = ""; public string? Note { get; set; } public bool IsActive { get; set; } = true; public string? AutoComment { get; set; } public string? AutoCommentProvider { get; set; } public DateTime? AutoCommentGeneratedAt { get; set; }
     public string? SourceClassSectionCode { get; set; }
     public long? AcademicTermId { get; set; }
@@ -149,6 +149,7 @@ public sealed class AttendancePolicy : Entity
 }
 public sealed class Session : Entity
 {
+    public string? Code { get; set; }
     public bool IsDevelopment { get; set; }
     public bool SupersededByScheduleChange { get; set; }
     public long? ClassScheduleId { get; set; }

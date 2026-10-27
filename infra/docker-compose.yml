@@ -103,7 +103,7 @@ services:
       AiService__CallbackApiKey: "CHANGE_AI_CALLBACK_KEY"
       Llm__Enabled: "true"
       Llm__Provider: "GEMINI"
-      Llm__Model: "${GEMINI_MODEL:-gemini-2.5-pro}"
+      Llm__Model: "${GEMINI_MODEL:-gemini-3.5-flash-lite}"
       GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
       ObjectStorage__Endpoint: "minio:9000"
       ObjectStorage__PublicEndpoint: "localhost:9000"

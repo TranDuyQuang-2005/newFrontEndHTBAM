@@ -274,12 +274,21 @@ class SessionInferenceManager:
     def _finalize_job(self, job: JobState) -> None:
         try:
             worker = job.worker
-            if worker is not None and worker.is_alive() and worker is not threading.current_thread():
+            while worker is not None and worker.is_alive() and worker is not threading.current_thread():
                 worker.join(timeout=self.stop_drain_timeout)
-            if worker is not None and worker.is_alive():
-                raise TimeoutError(
-                    f"Session worker did not drain within {self.stop_drain_timeout:.0f} seconds"
-                )
+                if worker.is_alive():
+                    # Finalization already runs on a background thread. A large browser-camera
+                    # backlog can legitimately take longer than one drain interval, especially
+                    # on CPU. Keep the session FINALIZING while progress is still owned by the
+                    # worker instead of turning a healthy backlog into a permanent failure.
+                    LOGGER.warning(
+                        "Session job %s is still draining after %.0fs accepted=%s processed=%s failed=%s",
+                        job.job_id,
+                        self.stop_drain_timeout,
+                        job.accepted_chunks,
+                        job.processed_chunks,
+                        len(job.browser_failed_chunks),
+                    )
             if job.error:
                 with self.jobs_lock:
                     job.status = "FAILED"
@@ -358,7 +367,9 @@ class SessionInferenceManager:
                             payload.get("eventType"),
                         )
                         return
-                    res.raise_for_status()
+                    if res.is_error:
+                        detail = (res.text or res.reason_phrase or "callback rejected").strip()[:500]
+                        raise RuntimeError(f"AI callback HTTP {res.status_code}: {detail}")
                     return
             except Exception as exc:
                 last = exc
@@ -667,7 +678,27 @@ class SessionInferenceManager:
                 })
 
     def _behavior_chunk(self, job, chunk_index, track_csv: Path, resolved, chunk_offset: float) -> int:
-        manifest_path = Path(self._build_behavior(track_csv, job.work_dir / "d6_cache", self.d6_cfg, project_root=self.training_root))
+        try:
+            manifest_path = Path(self._build_behavior(
+                track_csv,
+                job.work_dir / "d6_cache",
+                self.d6_cfg,
+                project_root=self.training_root,
+            ))
+        except RuntimeError as exc:
+            # A short/sparse chunk can contain real tracked people but still be too short
+            # for D6 to form a temporal window. That means "no behavior observation",
+            # not corrupt media. Preserve an explicitly empty behavior list so rendering
+            # can continue without inventing a label; all other D6 errors remain fatal.
+            if not str(exc).startswith("D6 không tạo được segment nào cho "):
+                raise
+            job.annotation_behavior_segments[chunk_index] = []
+            LOGGER.info(
+                "Session job %s chunk=%s has no eligible D6 behavior window",
+                job.job_id,
+                chunk_index,
+            )
+            return 0
         manifest = pd.read_csv(manifest_path)
         segments: list[dict[str, Any]] = []
         job.annotation_behavior_segments[chunk_index] = segments

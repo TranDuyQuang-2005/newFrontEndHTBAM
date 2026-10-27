@@ -81,10 +81,10 @@ public sealed class StudentsController(AppDbContext db, IAuditService audit) : C
     }
 
     [HttpPost, Authorize(Roles = "LECTURER")]
-    public async Task<ActionResult> Create(UpsertStudentRequest request, CancellationToken ct)
+    public Task<ActionResult> Create(UpsertStudentRequest request, CancellationToken ct) => BusinessTransaction.Run<ActionResult>(db, BusinessCodes.Resource, async () =>
     {
         if (request.StudentClassId is null || !await AccessScope.CanManageStudentClassAsync(db, User, request.StudentClassId.Value, ct)) return Forbid();
-        request = request with { AnonymousCode = InternalCode.New("SV") };
+        request = request with { AnonymousCode = await BusinessCodes.Next(db,"SV-ANON-",6,db.StudentsSet.Select(x=>x.AnonymousCode),ct) };
         var error = await Validate(request, null, ct);
         if (error is not null) return error;
         var student = new Student
@@ -96,7 +96,7 @@ public sealed class StudentsController(AppDbContext db, IAuditService audit) : C
         await db.SaveChangesAsync(ct);
         await audit.WriteAsync(UserContext.Id(User), "STUDENT_CREATE", "Student", student.Id.ToString(), new { student.StudentCode }, ct);
         return CreatedAtAction(nameof(Get), new { id = student.Id }, student);
-    }
+    },ct);
 
     [HttpPut("{id:long}"), Authorize(Roles = "LECTURER")]
     public async Task<ActionResult> Update(long id, UpsertStudentRequest request, CancellationToken ct)
@@ -104,15 +104,13 @@ public sealed class StudentsController(AppDbContext db, IAuditService audit) : C
         var student = await db.StudentsSet.FindAsync([id], ct);
         if (student is null) return NotFound();
         if (!await AccessScope.CanManageStudentAsync(db, User, id, ct)) return Forbid();
-        request = request with { AnonymousCode = student.AnonymousCode };
+        request = request with { StudentCode = student.StudentCode, AnonymousCode = student.AnonymousCode };
         if (request.StudentClassId != student.StudentClassId && request.StudentClassId is not null && !await AccessScope.CanManageStudentClassAsync(db, User, request.StudentClassId.Value, ct)) return Forbid();
         var error = await Validate(request, id, ct);
         if (error is not null) return error;
-        student.StudentCode = request.StudentCode.Trim();
         student.FullName = request.FullName.Trim();
         student.Email = request.Email.Trim();
         student.StudentClassId = request.StudentClassId;
-        student.AnonymousCode = (request.AnonymousCode ?? "").Trim();
         student.IsActive = request.IsActive;
         await db.SaveChangesAsync(ct);
         await audit.WriteAsync(UserContext.Id(User), "STUDENT_UPDATE", "Student", id.ToString(), new { student.StudentCode, student.IsActive }, ct);
@@ -225,7 +223,7 @@ public sealed class StudentsController(AppDbContext db, IAuditService audit) : C
             await using var transaction = db.Database.IsRelational()
                 ? await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct)
                 : null;
-
+            if(db.Database.IsSqlServer()) await db.Database.ExecuteSqlRawAsync("DECLARE @r int; EXEC @r=sys.sp_getapplock @Resource=N'HTBAM:academic-scheduling',@LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=15000; IF @r<0 THROW 50001,'Student import is busy. Retry.',1;",ct);
             var classCodes = candidates.Select(x => x.StudentClassCode).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         var classes = await db.StudentClassesSet.AsNoTracking().Where(x => classCodes.Contains(x.Code) && x.IsActive).ToListAsync(ct);
         var classByCode = classes.ToDictionary(x => x.Code, StringComparer.OrdinalIgnoreCase);
@@ -272,7 +270,7 @@ public sealed class StudentsController(AppDbContext db, IAuditService audit) : C
             db.StudentsSet.Add(new Student
             {
                 StudentCode = candidate.StudentCode, FullName = candidate.FullName, Email = candidate.Email,
-                StudentClassId = classByCode[candidate.StudentClassCode].Id, AnonymousCode = InternalCode.New("SV"), SourceAnonymousCode = string.IsNullOrEmpty(candidate.AnonymousCode) ? null : candidate.AnonymousCode,
+                StudentClassId = classByCode[candidate.StudentClassCode].Id, AnonymousCode = await BusinessCodes.Next(db,"SV-ANON-",6,db.StudentsSet.Select(x=>x.AnonymousCode),ct), SourceAnonymousCode = string.IsNullOrEmpty(candidate.AnonymousCode) ? null : candidate.AnonymousCode,
                 IsActive = true, CreatedAt = createdAt
             });
         }

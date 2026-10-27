@@ -24,7 +24,7 @@ public sealed class GeminiLlmProvider : ILlmProvider
             ?? System.Environment.GetEnvironmentVariable("GOOGLE_API_KEY");
         ModelName = System.Environment.GetEnvironmentVariable("GEMINI_MODEL")
             ?? configuration["Llm:Model"]
-            ?? "gemini-2.5-pro";
+            ?? "gemini-3.5-flash-lite";
         _timeoutSeconds = Math.Clamp(configuration.GetValue("Llm:TimeoutSeconds", 45), 1, 180);
         _temperature = Math.Clamp(configuration.GetValue("Llm:Temperature", 0.2d), 0d, 2d);
         _maxOutputTokens = Math.Clamp(configuration.GetValue("Llm:MaxOutputTokens", 500), 32, 8192);
@@ -103,6 +103,7 @@ public sealed class GeminiLlmProvider : ILlmProvider
         if (status is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden) return "AUTH_ERROR";
         if (status == HttpStatusCode.TooManyRequests) return "RATE_LIMIT";
         if (status == HttpStatusCode.NotFound) return "INVALID_MODEL";
+        if (status is HttpStatusCode.InternalServerError or HttpStatusCode.BadGateway or HttpStatusCode.ServiceUnavailable or HttpStatusCode.GatewayTimeout) return "SERVICE_UNAVAILABLE";
         if (exception is HttpRequestException) return "NETWORK_ERROR";
 
         var message = exception.Message.ToUpperInvariant();
@@ -117,10 +118,18 @@ public sealed class GeminiLlmProvider : ILlmProvider
         while (exception is not null)
         {
             if (exception is HttpRequestException http && http.StatusCode is not null) return http.StatusCode;
-            var statusProperty = exception.GetType().GetProperty("HttpStatusCode") ?? exception.GetType().GetProperty("StatusCode");
-            var value = statusProperty?.GetValue(exception);
-            if (value is HttpStatusCode status) return status;
-            if (value is int code && Enum.IsDefined(typeof(HttpStatusCode), code)) return (HttpStatusCode)code;
+            var statusProperties = exception.GetType().GetProperties()
+                .Where(property =>
+                    property.GetIndexParameters().Length == 0
+                    && (property.Name == "HttpStatusCode" || property.Name == "StatusCode"));
+            foreach (var statusProperty in statusProperties)
+            {
+                object? value;
+                try { value = statusProperty.GetValue(exception); }
+                catch { continue; }
+                if (value is HttpStatusCode status) return status;
+                if (value is int code && Enum.IsDefined(typeof(HttpStatusCode), code)) return (HttpStatusCode)code;
+            }
             exception = exception.InnerException;
         }
         return null;

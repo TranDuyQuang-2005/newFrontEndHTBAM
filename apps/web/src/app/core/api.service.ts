@@ -103,7 +103,10 @@ export class ApiService {
   historySession(id:number,kind:'behaviors'|'attendance'|'identities'){return this.http.get<any[]>(`/api/history/sessions/${id}/${kind}`)}
   report(kind:'sessions'|'students'|'class-sections',id:number){return this.http.get<any>(`/api/reports/${kind}/${id}`)}
   reportOptions(kind:'sessions'|'students'|'class-sections'){return this.http.get<Array<{id:number;label:string;status?:string;scheduledStart?:string}>>('/api/reports/options',{params:{kind}})}
-  exportReport(kind:'sessions'|'students'|'class-sections',id:number,format:'pdf'|'excel'){return this.http.get(`/api/reports/${kind}/${id}/${format}`,{responseType:'blob'})}
+  exportReport(kind:'sessions'|'students'|'class-sections',id:number,format:'pdf'|'excel'){return this.http.get(`/api/reports/${kind}/${id}/${format}`,{responseType:'blob',observe:'response'})}
+  generateSessionAutoComment(id:number){return this.http.post<any>(`/api/reports/sessions/${id}/auto-comment`,{})}
+  generateStudentAutoComment(sessionId:number,studentId:number){return this.http.post<any>(`/api/reports/sessions/${sessionId}/students/${studentId}/auto-comment`,{})}
+  generateClassSectionAutoComment(id:number){return this.http.post<any>(`/api/reports/class-sections/${id}/auto-comment`,{})}
 
   faceList(studentId:number){return this.http.get<FaceEnrollment[]>(`/api/students/${studentId}/face-enrollments`)}
   faceDetail(studentId:number,enrollmentId:number){return this.http.get<any>(`/api/students/${studentId}/face-enrollments/${enrollmentId}`)}

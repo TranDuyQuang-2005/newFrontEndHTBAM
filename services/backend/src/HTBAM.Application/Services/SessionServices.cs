@@ -249,7 +249,8 @@ public sealed class SessionService(IAppDbContext db, IAiClient ai, ISummaryServi
                 try
                 {
                     var state = await ai.GetJobAsync(job.ExternalJobId, ct);
-                    if (state.Status.Equals("RUNNING", StringComparison.OrdinalIgnoreCase))
+                    if (state.Status.Equals("RUNNING", StringComparison.OrdinalIgnoreCase) ||
+                        state.Status.Equals("FINALIZE_FAILED", StringComparison.OrdinalIgnoreCase))
                         state = await ai.StopAsync(job.ExternalJobId, ct);
                     if (await AdvanceFinalizeAsync(s, job, state, ct)) completed.Add(sessionId);
                 }
@@ -473,25 +474,21 @@ public sealed class SummaryService(IAppDbContext db) : ISummaryService
         }
         await db.SaveChangesAsync(ct);
 
-        var summaries = await db.StudentSessionSummaries.Where(x => x.SessionId == sessionId).ToListAsync(ct);
         var attendance = await db.Attendance.Where(x => x.SessionId == sessionId).ToListAsync(ct);
-        var weightByStudent = attendance.ToDictionary(x => x.StudentId, x => x.ObservedSeconds);
-        decimal Weighted(Func<StudentSessionSummary, decimal> selector)
-        {
-            var weighted = summaries.Sum(x => selector(x) * weightByStudent.GetValueOrDefault(x.StudentId));
-            var totalWeight = summaries.Sum(x => weightByStudent.GetValueOrDefault(x.StudentId));
-            return totalWeight <= 0 ? 0 : weighted / totalWeight;
-        }
+        // Class metrics describe everything actually observed by the behavior pipeline, including
+        // UNKNOWN identities. Student metrics remain restricted to events linked to that student.
+        var classEvents = await db.BehaviorEvents.Where(x => x.SessionId == sessionId).ToListAsync(ct);
+        var classBehavior = BehaviorSummaryCalculator.Calculate(classEvents, session.StartedAt.Value, endedAt);
+        var classAlertCount = await db.Alerts.CountAsync(x => x.SessionId == sessionId, ct);
 
         var classSummary = await db.ClassSessionSummaries.FirstOrDefaultAsync(x => x.SessionId == sessionId, ct) ?? new ClassSessionSummary { SessionId = sessionId };
-        classSummary.ObservedStudentCount = attendance.Count(x => x.ObservedSeconds > 0);
-        classSummary.FocusedRatio = Weighted(x => x.FocusedRatio);
-        classSummary.DistractedRatio = Weighted(x => x.DistractedRatio);
-        classSummary.SleepyRatio = Weighted(x => x.SleepyRatio);
-        classSummary.ActiveRatio = Weighted(x => x.ActiveRatio);
-        classSummary.AlertCount = summaries.Sum(x => x.AlertCount);
-        var totalObserved = attendance.Sum(x => x.ObservedSeconds);
-        classSummary.CameraAiQuality = totalObserved <= 0 ? 0 : attendance.Sum(x => x.ObservationQuality * x.ObservedSeconds) / totalObserved;
+        classSummary.ObservedStudentCount = classBehavior.ObservedIdentityCount;
+        classSummary.FocusedRatio = classBehavior.FocusedRatio;
+        classSummary.DistractedRatio = classBehavior.DistractedRatio;
+        classSummary.SleepyRatio = classBehavior.SleepyRatio;
+        classSummary.ActiveRatio = classBehavior.ActiveRatio;
+        classSummary.AlertCount = classAlertCount;
+        classSummary.CameraAiQuality = classBehavior.ObservationQuality;
         if (classSummary.Id == 0) await db.AddAsync(classSummary, ct); else db.Update(classSummary);
         await db.SaveChangesAsync(ct);
     }

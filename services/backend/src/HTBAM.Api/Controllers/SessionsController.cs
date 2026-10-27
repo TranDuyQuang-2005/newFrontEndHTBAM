@@ -85,7 +85,10 @@ public sealed class SessionsController(AppDbContext db, ISessionService sessions
         var cameraMode = cameraInfo?.RtspUrl.StartsWith("browser://", StringComparison.OrdinalIgnoreCase) == true
             ? "BROWSER"
             : x.CameraId is not null ? "RTSP" : null;
-        return Ok(new { x.Id, x.ClassSectionId, ClassSection = x.ClassSection.Code, Course = x.ClassSection.Course.Name, Teacher = x.ClassSection.Teacher.FullName, OriginalTeacherId = originalTeacherId, OriginalTeacherName = originalTeacherName, ActualTeacherId = substitution?.SubstituteTeacherId ?? originalTeacherId, ActualTeacherName = substitution?.SubstituteTeacherName ?? originalTeacherName, Substitution = substitution, ActiveSubstitution = substitution?.Status == "ACTIVE" ? substitution : null, CanOperate = canOperate, CanManage = canManage, IsScheduled = x.ClassScheduleId != null, x.ClassScheduleId, x.OccurrenceDate, x.StartPeriod, x.EndPeriod, x.RoomId, x.CameraId, CameraName = cameraInfo?.Name, CameraMode = cameraMode, x.VideoId, SourceConfigured = x.CameraId != null || x.VideoId != null, x.AttendancePolicyId, x.ScheduledStart, x.ScheduledEnd, x.StartedAt, x.EndedAt, x.Status, x.AlertProfile, x.LecturerComment, roster });
+        var latestJob = await db.AnalysisJobsSet.AsNoTracking().Where(j => j.SessionId == id)
+            .OrderByDescending(j => j.Id).Select(j => new { j.Status, j.ErrorMessage }).FirstOrDefaultAsync(ct);
+        var finalizeFailure = FinalizeFailure(latestJob?.ErrorMessage);
+        return Ok(new { x.Id, x.ClassSectionId, ClassSection = x.ClassSection.Code, Course = x.ClassSection.Course.Name, Teacher = x.ClassSection.Teacher.FullName, OriginalTeacherId = originalTeacherId, OriginalTeacherName = originalTeacherName, ActualTeacherId = substitution?.SubstituteTeacherId ?? originalTeacherId, ActualTeacherName = substitution?.SubstituteTeacherName ?? originalTeacherName, Substitution = substitution, ActiveSubstitution = substitution?.Status == "ACTIVE" ? substitution : null, CanOperate = canOperate, CanManage = canManage, IsScheduled = x.ClassScheduleId != null, x.ClassScheduleId, x.OccurrenceDate, x.StartPeriod, x.EndPeriod, x.RoomId, x.CameraId, CameraName = cameraInfo?.Name, CameraMode = cameraMode, x.VideoId, SourceConfigured = x.CameraId != null || x.VideoId != null, x.AttendancePolicyId, x.ScheduledStart, x.ScheduledEnd, x.StartedAt, x.EndedAt, x.Status, x.AlertProfile, x.LecturerComment, FinalizeJobStatus = latestJob?.Status, FinalizeErrorCode = finalizeFailure.Code, FinalizeError = finalizeFailure.Message, roster });
     }
 
     [HttpPost, Authorize(Roles = "LECTURER")]
@@ -272,6 +275,23 @@ public sealed class SessionsController(AppDbContext db, ISessionService sessions
     }
 
     public record CommentReq(string? Comment);
+
+    private static (string? Code, string? Message) FinalizeFailure(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return (null, null);
+        if (raw.Contains("did not drain", StringComparison.OrdinalIgnoreCase))
+            return ("AI_DRAIN_TIMEOUT", "AI chưa xử lý hết các đoạn video đã nhận trong thời gian chờ. Dữ liệu vẫn được giữ để thử hoàn tất lại.");
+        if (raw.Contains("D6 không tạo được segment", StringComparison.OrdinalIgnoreCase))
+            return ("AI_NO_BEHAVIOR_WINDOW", "Một đoạn video không đủ quan sát liên tục để tạo cửa sổ hành vi D6. Đoạn này phải được giữ với 0 quan sát, không được tạo nhãn giả.");
+        if (raw.Contains("callback", StringComparison.OrdinalIgnoreCase) || raw.Contains("409", StringComparison.OrdinalIgnoreCase))
+            return ("AI_CALLBACK_REJECTED", "Một số sự kiện AI chưa được backend chấp nhận. Hãy thử hoàn tất lại sau khi kiểm tra trạng thái dịch vụ AI.");
+        if (raw.Contains("artifact", StringComparison.OrdinalIgnoreCase) || raw.Contains("video đầu ra", StringComparison.OrdinalIgnoreCase))
+            return ("AI_ARTIFACT_FAILED", "AI chưa tạo hoặc chưa lưu được video kết quả bắt buộc.");
+        if (raw.Contains("timeout", StringComparison.OrdinalIgnoreCase) || raw.Contains("timed out", StringComparison.OrdinalIgnoreCase))
+            return ("AI_TIMEOUT", "Dịch vụ AI chưa phản hồi trong thời gian chờ. Có thể thử hoàn tất lại mà không tạo job mới.");
+        return ("AI_FINALIZE_FAILED", "Dịch vụ AI chưa hoàn tất được dữ liệu cuối của buổi học. Dữ liệu đã nhận vẫn được giữ để thử lại.");
+    }
+
     [HttpPut("{id:long}/lecturer-comment"), Authorize(Roles = "LECTURER")]
     public async Task<ActionResult> Comment(long id, CommentReq r, CancellationToken ct)
     {

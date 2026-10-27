@@ -1,3 +1,8 @@
+import { formatDateOnly } from './date-only';
+export function displayBusinessCode(code: string | null | undefined): string {
+  if (!code) return '—';
+  return /[a-f0-9]{32}|[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}/i.test(code) ? 'Mã cũ' : code;
+}
 import { DOCUMENT } from '@angular/common';
 import {
   AfterViewInit,
@@ -601,6 +606,7 @@ function safeRetrySeconds(value: unknown): number | null {
 export function fmtDate(
   value?: string | null,
 ): string {
+  if(value && value.length === 10)return formatDateOnly(value) || '—';
   return value
     ? new Date(/Z$|[+-]\d\d:\d\d$/.test(value) || value.length <= 10 ? value : value + 'Z').toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })
     : '—';

@@ -1,6 +1,8 @@
 using System.Security.Claims;
 using System.Text.Json;
+using ClosedXML.Excel;
 using HTBAM.Api.Controllers;
+using HTBAM.Api.Support;
 using HTBAM.Application.DTOs;
 using HTBAM.Application.Interfaces;
 using HTBAM.Application.Services;
@@ -12,6 +14,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using QuestPDF.Infrastructure;
 using Xunit;
 
 namespace HTBAM.Tests;
@@ -117,6 +120,78 @@ public sealed class LlmModuleTests
     }
 
     [Fact]
+    public async Task Student_prompt_contains_stored_metrics_but_no_mssv_or_personal_identifier()
+    {
+        await using var db = CreateDb();
+        await SeedSessionAsync(db);
+        var provider = new FakeProvider();
+        var service = new AutoCommentService(db, new FakeResolver(provider), new AuditSpy());
+
+        var result = await service.GenerateStudentAsync(100, 700, 500);
+
+        Assert.NotNull(result);
+        Assert.NotNull(provider.LastRequest);
+        Assert.Equal("STORED_SUMMARY", provider.LastRequest.SubjectId);
+        Assert.Equal("Sinh viên trong buổi học", provider.LastRequest.SubjectName);
+        Assert.Null(provider.LastRequest.AdditionalContext);
+        var prompt = LlmPromptBuilder.Build(provider.LastRequest);
+        Assert.DoesNotContain("SV-SECRET-700", prompt, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("700", prompt, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("SessionId", prompt, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Report_exports_use_scoped_payload_and_include_available_sections()
+    {
+        await using var db = CreateDb();
+        await SeedSessionAsync(db);
+        await SeedForeignSessionAsync(db);
+        var service = new AutoCommentService(db, new FakeResolver(new FakeProvider { IsConfiguredValue = false }), new AuditSpy());
+        var controller = new ReportsController(db, service) { ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = Lecturer(500) } } };
+
+        var owned = Assert.IsType<FileContentResult>(await controller.SessionExcel(100, CancellationToken.None));
+        Assert.EndsWith(".xlsx", owned.FileDownloadName, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", owned.ContentType);
+        using var workbook = new XLWorkbook(new MemoryStream(owned.FileContents));
+        Assert.Contains(workbook.Worksheets, x => x.Name == "Tong hop");
+        Assert.Contains(workbook.Worksheets, x => x.Name == "Sinh viên");
+        Assert.Contains(workbook.Worksheets, x => x.Name == "Chuyên cần");
+        Assert.Contains(workbook.Worksheets, x => x.Name == "Sự kiện hành vi");
+        Assert.Contains(workbook.Worksheets, x => x.Name == "Cảnh báo");
+        Assert.Contains(workbook.Worksheets, x => x.Name == "Kết quả nhận diện");
+        Assert.Contains(workbook.Worksheets, x => x.Name == "Video");
+        var attendanceSheet = workbook.Worksheet("Chuyên cần");
+        Assert.Contains(attendanceSheet.Row(1).CellsUsed(), cell => cell.GetString() == "Điểm chuyên cần (%)");
+        Assert.DoesNotContain(attendanceSheet.Row(1).CellsUsed(), cell => cell.GetString().Contains("ID", StringComparison.OrdinalIgnoreCase));
+        Assert.StartsWith("He-thong-giam-sat-", owned.FileDownloadName, StringComparison.OrdinalIgnoreCase);
+        QuestPDF.Settings.License = LicenseType.Community;
+        var classPdf = Assert.IsType<FileContentResult>(await controller.ClassPdf(30, CancellationToken.None));
+        Assert.EndsWith(".pdf", classPdf.FileDownloadName, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("application/pdf", classPdf.ContentType);
+        Assert.True(classPdf.FileContents.Length > 1_000);
+        Assert.IsType<ForbidResult>(await controller.SessionExcel(200, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Personal_comment_is_blocked_when_identity_is_not_trusted()
+    {
+        await using var db = CreateDb();
+        await SeedSessionAsync(db);
+        var identity = await db.StableIdentitiesSet.SingleAsync(x => x.StudentId == 700);
+        identity.IdentityStatus = "UNKNOWN";
+        await db.SaveChangesAsync();
+        var provider = new FakeProvider();
+        var service = new AutoCommentService(db, new FakeResolver(provider), new AuditSpy());
+        var controller = new ReportsController(db, service) { ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = Lecturer(500) } } };
+
+        var response = await controller.GenerateStudentComment(100, 700, CancellationToken.None);
+
+        var conflict = Assert.IsType<ConflictObjectResult>(response);
+        Assert.Contains("IDENTIFIED", JsonSerializer.Serialize(conflict.Value));
+        Assert.False(provider.WasCalled);
+    }
+
+    [Fact]
     public async Task Lecturer_can_generate_for_owned_session_but_not_foreign_session()
     {
         await using var db = CreateDb();
@@ -172,13 +247,18 @@ public sealed class LlmModuleTests
         var teacher = new Teacher { Id = 10, TeacherCode = "GV01", FullName = "Lecturer", UserId = 500 };
         var course = new Course { Id = 20, Code = "CS", Name = "Course" };
         var section = new ClassSection { Id = 30, Code = "CLS01", Name = "Class", CourseId = 20, Course = course, TeacherId = 10, Teacher = teacher };
-        var policy = new AttendancePolicy { Id = 40, Code = "DEFAULT", Name = "Default" };
-        var session = new Session { Id = 100, ClassSectionId = 30, ClassSection = section, AttendancePolicyId = 40, Status = "COMPLETED", ScheduledStart = DateTime.UtcNow };
+        var started = DateTime.UtcNow.AddMinutes(-10);
+        var policy = new AttendancePolicy { Id = 40, Code = "DEFAULT", Name = "Default", PresentScore = 10, PartialScore = 5, AbsentScore = 0 };
+        var session = new Session { Id = 100, ClassSectionId = 30, ClassSection = section, AttendancePolicyId = 40, Status = "COMPLETED", ScheduledStart = started, StartedAt = started, EndedAt = started.AddMinutes(10) };
         db.AddRange(teacher, course, section, policy, session, new ClassSessionSummary
         {
             Id = 110, SessionId = 100, ObservedStudentCount = 3, FocusedRatio = .7m,
             DistractedRatio = .15m, SleepyRatio = .05m, ActiveRatio = .1m, AlertCount = 1, CameraAiQuality = .9m
-        });
+        }, new Student { Id = 700, StudentCode = "SV-SECRET-700", FullName = "Private Student", Email = "private@example.test", AnonymousCode = "ANON-SECRET", StudentClassId = 1 },
+        new StudentSessionSummary { Id = 701, SessionId = 100, StudentId = 700, FocusedRatio = .6m, DistractedRatio = .2m, SleepyRatio = .1m, ActiveRatio = .1m, AlertCount = 2, ObservationQuality = .8m },
+        new StableIdentity { Id = 800, SessionId = 100, StableId = "stable-private", StudentId = 700, IdentityStatus = "IDENTIFIED", IdentityConfidence = .9m, FirstSeenAt = started, LastSeenAt = started.AddSeconds(60) },
+        new BehaviorEvent { Id = 801, ExternalEventId = "private-behavior", SessionId = 100, StableIdentityId = 800, StudentId = 700, Label = "FOCUSED", Probability = .9m, ObservationQuality = .8m, StartedAt = started, EndedAt = started.AddSeconds(60), ModelVersion = "test", ThresholdVersion = "test" },
+        new Attendance { Id = 802, SessionId = 100, StudentId = 700, PresentSeconds = 60, ObservedSeconds = 60, PresenceRatio = 1, ObservationQuality = .8m, Status = "PRESENT", Score = 10, PolicyVersion = "v1" });
         await db.SaveChangesAsync();
     }
 
@@ -206,8 +286,9 @@ public sealed class LlmModuleTests
         public bool IsConfigured => IsConfiguredValue;
         public bool IsConfiguredValue { get; init; } = true;
         public bool WasCalled { get; private set; }
+        public LlmCommentRequest? LastRequest { get; private set; }
         public LlmGenerationResult? Result { get; init; } = new("OK", "GEMINI", "gemini-2.5-pro", DateTime.UtcNow, false);
-        public Task<LlmGenerationResult?> GenerateCommentAsync(LlmCommentRequest request, CancellationToken cancellationToken = default) { WasCalled = true; return Task.FromResult(Result); }
+        public Task<LlmGenerationResult?> GenerateCommentAsync(LlmCommentRequest request, CancellationToken cancellationToken = default) { WasCalled = true; LastRequest = request; return Task.FromResult(Result); }
     }
     private sealed class ThrowingProvider : ILlmProvider
     {

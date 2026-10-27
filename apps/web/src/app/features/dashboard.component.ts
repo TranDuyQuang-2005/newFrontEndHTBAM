@@ -49,12 +49,12 @@ import { PageTitleComponent, behaviorText, errorText, fmtDate, statusText } from
         <div class="table-wrap">
           @if (sessionsError()) { <div class="error-box">{{ sessionsError() }}</div> }
           <table>
-            <thead><tr><th>Buổi học</th><th>Lớp học phần</th><th>Thời gian</th><th>Trạng thái</th></tr></thead>
+            <thead><tr><th>Lớp học phần</th><th>Môn học</th><th>Thời gian</th><th>Trạng thái</th></tr></thead>
             <tbody>
               @for (session of recentSessions(); track session.id) {
                 <tr>
-                  <td class="cell-title">#{{ session.id }}</td>
-                  <td>{{ session.classSectionId }}</td>
+                  <td class="cell-title">{{ session.classSection || 'Chưa có tên lớp' }}</td>
+                  <td>{{ session.course || '—' }}</td>
                   <td>{{ date(session.scheduledStart) }}</td>
                   <td><span class="badge" [class.gray]="session.status === 'COMPLETED'" [class.blue]="session.status === 'DRAFT' || session.status === 'READY'">{{ sessionStatus(session.status) }}</span></td>
                 </tr>
@@ -73,7 +73,7 @@ import { PageTitleComponent, behaviorText, errorText, fmtDate, statusText } from
           @for (alert of recentAlerts(); track alert.id) {
             <div class="service-card" style="margin-bottom:8px">
               <span class="status-dot" [style.background]="alert.status === 'OPEN' ? '#f59e0b' : '#16a34a'"></span>
-              <div><strong>{{ behaviorLabel(alert.type) }}</strong><small>Buổi học #{{ alert.sessionId }} · {{ date(alert.createdAt) }}</small></div>
+              <div><strong>{{ behaviorLabel(alert.type) }}</strong><small>Ghi nhận lúc {{ date(alert.createdAt) }}</small></div>
             </div>
           } @empty {
             <div class="empty-state" style="min-height:140px"><div><strong>Không có cảnh báo gần đây</strong><span>Hệ thống chưa trả về hoạt động cần chú ý.</span></div></div>
@@ -94,7 +94,7 @@ import { PageTitleComponent, behaviorText, errorText, fmtDate, statusText } from
 
     <section class="card">
       <div class="card-header" style="margin:-20px -20px 16px"><div><h3>Phân tích hành vi</h3><p>Tổng hợp hành vi được hiển thị trong báo cáo theo buổi học, sinh viên hoặc lớp học phần.</p></div><a class="button-link secondary small" routerLink="/reports">Mở báo cáo</a></div>
-      <div class="empty-state" style="min-height:120px"><div><strong>Chọn phạm vi báo cáo để xem phân tích</strong><span>HTBAM không dùng dữ liệu mô phỏng trên màn tổng quan.</span></div></div>
+      <div class="empty-state" style="min-height:120px"><div><strong>Chọn phạm vi báo cáo để xem phân tích</strong><span>Màn hình này chỉ hiển thị dữ liệu đã được hệ thống ghi nhận.</span></div></div>
     </section>
   `,
 })
@@ -129,9 +129,9 @@ export class DashboardComponent implements OnInit {
     const c = this.capabilities();
     if (!c) return [];
     return [
-      { name: 'Máy chủ API', ok: c.backend }, { name: 'Cơ sở dữ liệu', ok: c.database },
-      { name: 'Kho lưu trữ MinIO', ok: c.objectStorage }, { name: 'Dịch vụ AI', ok: c.aiHealth },
-      { name: 'Nhận diện khuôn mặt', ok: c.faceEnrollment }, { name: 'Dịch vụ mô hình ngôn ngữ', ok: c.llmProvider !== 'NOT_CONFIGURED' },
+      { name: 'Máy chủ ứng dụng', ok: c.backend }, { name: 'Dữ liệu nghiệp vụ', ok: c.database },
+      { name: 'Kho tệp', ok: c.objectStorage }, { name: 'Phân tích lớp học', ok: c.aiHealth },
+      { name: 'Nhận diện khuôn mặt', ok: c.faceEnrollment }, { name: 'Nhận xét tự động', ok: c.llmProvider !== 'NOT_CONFIGURED' },
     ];
   });
 

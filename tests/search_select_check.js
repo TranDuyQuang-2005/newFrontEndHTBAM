@@ -19,7 +19,7 @@ function fixture(){
   const signal=value=>{const get=()=>value;get.set=next=>{value=next;};get.update=fn=>{value=fn(value);};return get;};
   const documentToken=Symbol('document');const noDecorator=()=>()=>{};
   const core={Component:()=>target=>target,Input:noDecorator,ViewChild:noDecorator,HostListener:noDecorator,forwardRef:fn=>fn,signal,ElementRef:ElementToken,ChangeDetectionStrategy:{OnPush:0},inject:token=>token===documentToken?document:token===HttpToken?http:token===ElementToken?{nativeElement:host}:null};
-  const modules={'@angular/common':{DOCUMENT:documentToken},'@angular/common/http':{HttpClient:HttpToken,HttpParams:Params},'@angular/core':core,'@angular/forms':{NG_VALUE_ACCESSOR:Symbol('valueAccessor')},'./ui':{errorText:()=> 'Request error'}};
+  const modules={'@angular/common':{DOCUMENT:documentToken},'@angular/common/http':{HttpClient:HttpToken,HttpParams:Params},'@angular/core':core,'@angular/forms':{NG_VALUE_ACCESSOR:Symbol('valueAccessor')},'./ui':{displayBusinessCode:code=>code,errorText:()=> 'Request error'}};
   const source=fs.readFileSync('apps/web/src/app/shared/search-select.component.ts','utf8');const code=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,experimentalDecorators:true}}).outputText;
   const sandbox={exports:{},require:name=>{if(!modules[name])throw Error(name);return modules[name];},setTimeout,clearTimeout};vm.runInNewContext(code,sandbox);
   const control=new sandbox.exports.SearchSelectComponent();control.resource='rooms';control.input={nativeElement:input};control.panel={nativeElement:panel};control.panelHost={nativeElement:panelHost};

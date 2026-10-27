@@ -46,8 +46,17 @@ public sealed partial class AppDbContext(DbContextOptions<AppDbContext> options)
     Task IAppDbContext.AddAsync<T>(T entity, CancellationToken ct) => Set<T>().AddAsync(entity, ct).AsTask();
     void IAppDbContext.Update<T>(T entity) => Set<T>().Update(entity);
 
+    public DbSet<BusinessCodeSequence> BusinessCodeSequences => Set<BusinessCodeSequence>();
+
     protected override void OnModelCreating(ModelBuilder b)
     {
+        b.Entity<BusinessCodeSequence>().ToTable("BusinessCodeSequences");
+        b.Entity<BusinessCodeSequence>().HasKey(x => x.Scope);
+        b.Entity<BusinessCodeSequence>().Property(x => x.Scope).HasMaxLength(200);
+        b.Entity<Course>().Ignore(x => x.StartAcademicYear);
+        b.Entity<Course>().Property(x => x.StartSemester).HasColumnType("varchar(3)");
+        b.Entity<Session>().Property(x => x.Code).HasMaxLength(128);
+        b.Entity<Session>().HasIndex(x => x.Code).IsUnique().HasFilter("[Code] IS NOT NULL");
         b.Entity<CourseCodeCounter>().ToTable("CourseCodeCounters");
         b.Entity<LecturerCodeSequence>().ToTable("LecturerCodeSequences");
         b.Entity<LecturerCodeSequence>().HasKey(x=>x.DepartmentId);
@@ -57,6 +66,14 @@ public sealed partial class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<CatalogSeedIdentity>().ToTable("CatalogSeedIdentities");
         b.Entity<CatalogSeedIdentity>().HasKey(x=>x.Key);
         b.Entity<CatalogSeedIdentity>().Property(x=>x.Key).HasMaxLength(64);
+        b.Entity<CatalogSeedIdentity>().HasOne<Faculty>().WithMany().HasForeignKey(x=>x.FacultyId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<CatalogSeedIdentity>().HasOne<StudentClass>().WithMany().HasForeignKey(x=>x.StudentClassId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<CatalogSeedIdentity>().HasOne<Room>().WithMany().HasForeignKey(x=>x.RoomId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<CatalogSeedIdentity>().HasOne<Student>().WithMany().HasForeignKey(x=>x.StudentId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<CatalogSeedIdentity>().HasIndex(x=>x.FacultyId).IsUnique().HasFilter("[FacultyId] IS NOT NULL");
+        b.Entity<CatalogSeedIdentity>().HasIndex(x=>x.StudentClassId).IsUnique().HasFilter("[StudentClassId] IS NOT NULL");
+        b.Entity<CatalogSeedIdentity>().HasIndex(x=>x.RoomId).IsUnique().HasFilter("[RoomId] IS NOT NULL");
+        b.Entity<CatalogSeedIdentity>().HasIndex(x=>x.StudentId).IsUnique().HasFilter("[StudentId] IS NOT NULL");
         b.Entity<CatalogSeedIdentity>().HasOne<Department>().WithMany().HasForeignKey(x=>x.DepartmentId).OnDelete(DeleteBehavior.Restrict);
         b.Entity<CatalogSeedIdentity>().HasOne<Course>().WithMany().HasForeignKey(x=>x.CourseId).OnDelete(DeleteBehavior.Restrict);
         b.Entity<CatalogSeedIdentity>().HasIndex(x=>x.DepartmentId).IsUnique().HasFilter("[DepartmentId] IS NOT NULL");
