@@ -29,6 +29,7 @@ public sealed class Student : Entity
     public StudentClass? StudentClass { get; set; }
     public bool IsActive { get; set; } = true;
     public string AnonymousCode { get; set; } = "";
+    public string? SourceAnonymousCode { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 public sealed class Teacher : Entity { public string TeacherCode { get; set; } = ""; public string FullName { get; set; } = ""; public string Email { get; set; } = ""; public long? UserId { get; set; } public long? DepartmentId { get; set; } public string? Note { get; set; } public bool IsActive { get; set; } = true; }
@@ -52,9 +53,18 @@ public sealed class ManagementAssignment : Entity
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 public sealed class Course : Entity { public string Code { get; set; } = ""; public string Name { get; set; } = ""; public long? DepartmentId { get; set; } public int Credits { get; set; } = 3; public string? Note { get; set; } public bool IsActive { get; set; } = true; }
-public sealed class ClassSection : Entity { public string Code { get; set; } = ""; public string Name { get; set; } = ""; public long CourseId { get; set; } public Course Course { get; set; } = null!; public long TeacherId { get; set; } public Teacher Teacher { get; set; } = null!; public string Semester { get; set; } = ""; public string AcademicYear { get; set; } = ""; public string? Note { get; set; } public bool IsActive { get; set; } = true; public string? AutoComment { get; set; } public string? AutoCommentProvider { get; set; } public DateTime? AutoCommentGeneratedAt { get; set; } }
-public sealed class Enrollment { public long ClassSectionId { get; set; } public ClassSection ClassSection { get; set; } = null!; public long StudentId { get; set; } public Student Student { get; set; } = null!; public DateTime EnrolledAt { get; set; } = DateTime.UtcNow; }
-public sealed class Room : Entity { public string Code { get; set; } = ""; public string Name { get; set; } = ""; public string? Location { get; set; } public int Capacity { get; set; } public string? Note { get; set; } public bool IsActive { get; set; } = true; }
+public sealed class ClassSection : Entity { public string Code { get; set; } = ""; public string Name { get; set; } = ""; public long CourseId { get; set; } public Course Course { get; set; } = null!; public long TeacherId { get; set; } public Teacher Teacher { get; set; } = null!; public string Semester { get; set; } = ""; public string AcademicYear { get; set; } = ""; public string? Note { get; set; } public bool IsActive { get; set; } = true; public string? AutoComment { get; set; } public string? AutoCommentProvider { get; set; } public DateTime? AutoCommentGeneratedAt { get; set; }
+    public string? SourceClassSectionCode { get; set; }
+    public long? AcademicTermId { get; set; }
+    public AcademicTerm? AcademicTerm { get; set; }
+    public int? Phase { get; set; }
+    public long? AttendancePolicyId { get; set; }
+    public int Revision { get; set; }
+    public string? CreationKey { get; set; }
+    public string? CreationRequestHash { get; set; }
+}
+public sealed class Enrollment { public long ClassSectionId { get; set; } public ClassSection ClassSection { get; set; } = null!; public long StudentId { get; set; } public Student Student { get; set; } = null!; public DateTime EnrolledAt { get; set; } = DateTime.UtcNow; public string? ClassNote { get; set; } }
+public sealed class Room : Entity { public string Code { get; set; } = ""; public string Name { get; set; } = ""; public string? Location { get; set; } public int Capacity { get; set; } public string? Note { get; set; } public bool IsActive { get; set; } = true; public string RoomType { get; set; } = "UNKNOWN"; }
 public sealed class Camera : Entity { public string Code { get; set; } = ""; public string Name { get; set; } = ""; public long RoomId { get; set; } public Room Room { get; set; } = null!; public string RtspUrl { get; set; } = ""; public string Status { get; set; } = "OFFLINE"; public DateTime? LastHealthCheckAt { get; set; } public string? LastHealthMessage { get; set; } public string? Note { get; set; } public bool IsActive { get; set; } = true; }
 
 public sealed class FaceEnrollment : Entity
@@ -139,6 +149,14 @@ public sealed class AttendancePolicy : Entity
 }
 public sealed class Session : Entity
 {
+    public bool IsDevelopment { get; set; }
+    public bool SupersededByScheduleChange { get; set; }
+    public long? ClassScheduleId { get; set; }
+    public ClassSchedule? ClassSchedule { get; set; }
+    public DateOnly? OccurrenceDate { get; set; }
+    public int? StartPeriod { get; set; }
+    public int? EndPeriod { get; set; }
+    public long? BellTimeVersionId { get; set; }
     public long ClassSectionId { get; set; }
     public ClassSection ClassSection { get; set; } = null!;
     public long OriginalTeacherId { get; set; }

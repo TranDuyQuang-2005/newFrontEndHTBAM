@@ -6,7 +6,14 @@ namespace HTBAM.Infrastructure.Data;
 
 public static class DevelopmentSeeder
 {
-    public static async Task SeedAsync(AppDbContext db, CancellationToken ct = default)
+    public static Task SeedAsync(AppDbContext db,CancellationToken ct=default)=>db.Database.CreateExecutionStrategy().ExecuteAsync(async()=>
+    {
+        db.ChangeTracker.Clear();
+        await using var tx=db.Database.IsRelational()?await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable,ct):null;
+        if(db.Database.IsSqlServer())await db.Database.ExecuteSqlRawAsync("DECLARE @r int; EXEC @r=sys.sp_getapplock @Resource=N'HTBAM:academic-scheduling',@LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=15000; IF @r<0 THROW 50001,'Catalog seed lock timed out',1;",ct);
+        await SeedCore(db,ct);if(tx is not null)await tx.CommitAsync(ct);
+    });
+    private static async Task SeedCore(AppDbContext db, CancellationToken ct)
     {
         if (!await db.Database.CanConnectAsync(ct)) return;
 
@@ -105,7 +112,7 @@ public static class DevelopmentSeeder
                 FullName = fullName,
                 Status = "ACTIVE",
             };
-            user.PasswordHash = new PasswordHasher<User>().HashPassword(user, password);
+            user.PasswordHash = new PasswordHasher<User>().HashPassword(user, Environment.GetEnvironmentVariable("SEED_DEFAULT_PASSWORD") ?? "HTBAM-Local-Demo!2026#");
             db.UsersSet.Add(user);
             await db.SaveChangesAsync(ct);
         }
@@ -143,7 +150,7 @@ public static class DevelopmentSeeder
         {
             teacher = new Teacher
             {
-                TeacherCode = teacherCode,
+                TeacherCode = await LecturerCodeAllocator.Next(db,await db.DepartmentsSet.SingleAsync(x=>x.Id==departmentId,ct),true,ct),
                 FullName = fullName,
                 Email = email,
                 UserId = user.Id,
@@ -160,11 +167,13 @@ public static class DevelopmentSeeder
                     $"Teacher {teacher.TeacherCode} đã liên kết với một tài khoản khác.");
             }
 
-            teacher.UserId = user.Id;
-            teacher.FullName = fullName;
-            teacher.Email = email;
-            teacher.DepartmentId = departmentId;
-            teacher.IsActive = true;
+            if (teacher.UserId is null)
+            {
+                teacher.UserId = user.Id;
+                teacher.FullName = fullName;
+                teacher.Email = email;
+                teacher.DepartmentId ??= departmentId;
+            }
         }
 
         await db.SaveChangesAsync(ct);
@@ -181,20 +190,13 @@ public static class DevelopmentSeeder
         string note,
         CancellationToken ct)
     {
+        // Seed an empty slot once. A user transfer or revocation must survive restarts.
         var current = await db.ManagementAssignmentsSet.FirstOrDefaultAsync(x =>
             x.PositionType == positionType &&
-            x.IsActive &&
             x.FacultyId == facultyId &&
             x.DepartmentId == departmentId, ct);
 
-        if (current?.TeacherId == teacherId) return;
-
-        if (current is not null)
-        {
-            current.IsActive = false;
-            current.EffectiveTo = DateTime.UtcNow;
-            await db.SaveChangesAsync(ct);
-        }
+        if (current is not null) return;
 
         var desired = await db.ManagementAssignmentsSet
             .OrderByDescending(x => x.Id)

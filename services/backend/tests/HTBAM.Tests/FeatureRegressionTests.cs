@@ -124,7 +124,7 @@ public sealed class FeatureRegressionTests
         var students = await db.StudentsSet.OrderBy(x => x.StudentCode).ToListAsync();
         Assert.Equal(5, students.Count);
         Assert.All(students, student => Assert.Equal(10, student.StudentClassId));
-        Assert.All(students, student => Assert.StartsWith("ANON-", student.AnonymousCode));
+        Assert.All(students, student => { Assert.StartsWith("SV-", student.AnonymousCode); Assert.Null(student.SourceAnonymousCode); });
         Assert.Contains(students, student => student.FullName == "Nguyễn Văn 1");
     }
 
@@ -162,7 +162,7 @@ public sealed class FeatureRegressionTests
     }
 
     [Fact]
-    public async Task Video_preview_returns_presigned_url_only_when_object_exists()
+    public async Task Video_preview_returns_backend_stream_url_only_when_object_exists()
     {
         await using var db = CreateDb();
         db.VideosSet.Add(new Video { Id = 1, FileName = "lesson.mp4", StorageRef = "videos/lesson.mp4", ContentType = "video/mp4", Status = "READY", VideoType = "INPUT_UPLOAD", UploadedByUserId = 1 });
@@ -173,7 +173,49 @@ public sealed class FeatureRegressionTests
         var result = await controller.Preview(1, CancellationToken.None);
 
         Assert.IsType<OkObjectResult>(result);
-        Assert.Equal("videos/lesson.mp4", storage.LastReadKey);
+        Assert.Equal("videos/lesson.mp4", storage.LastStatKey);
+        var payload = Assert.IsType<OkObjectResult>(result).Value!;
+        var url = Assert.IsType<string>(payload.GetType().GetProperty("url")!.GetValue(payload));
+        Assert.StartsWith("/api/videos/1/stream?token=", url);
+        Assert.DoesNotContain("videos/lesson.mp4", url);
+    }
+
+    [Fact]
+    public async Task Video_stream_returns_partial_content_with_exact_range_headers()
+    {
+        await using var db = CreateDb();
+        var bytes = Encoding.UTF8.GetBytes("0123456789");
+        db.VideosSet.Add(new Video { Id = 1, FileName = "lesson.mp4", StorageRef = "videos/private/lesson.mp4", ContentType = "video/mp4", SizeBytes = bytes.Length, Status = "READY", VideoType = "INPUT_UPLOAD", UploadedByUserId = 1 });
+        await db.SaveChangesAsync();
+        var storage = new FakeStorage { Exists = true, Bytes = bytes };
+        var controller = WithUser(new VideosController(db, storage, new AuditSpy(), EmptyConfiguration(), NullLogger<VideosController>.Instance), 1, "TECH_AI");
+        var preview = Assert.IsType<OkObjectResult>(await controller.Preview(1, CancellationToken.None));
+        var url = (string)preview.Value!.GetType().GetProperty("url")!.GetValue(preview.Value)!;
+        var token = Uri.UnescapeDataString(url[(url.IndexOf("token=", StringComparison.Ordinal) + 6)..]);
+        var body = new MemoryStream();
+        controller.HttpContext.Response.Body = body;
+        controller.HttpContext.Request.Method = HttpMethods.Get;
+        controller.HttpContext.Request.Headers.Range = "bytes=2-6";
+
+        Assert.IsType<EmptyResult>(await controller.Stream(1, token, CancellationToken.None));
+
+        Assert.Equal(StatusCodes.Status206PartialContent, controller.HttpContext.Response.StatusCode);
+        Assert.Equal("video/mp4", controller.HttpContext.Response.ContentType);
+        Assert.Equal(5, controller.HttpContext.Response.ContentLength);
+        Assert.Equal("bytes", controller.HttpContext.Response.Headers.AcceptRanges);
+        Assert.Equal("bytes 2-6/10", controller.HttpContext.Response.Headers.ContentRange);
+        Assert.Equal(2, storage.LastOffset);
+        Assert.Equal(5, storage.LastLength);
+        Assert.Equal("23456", Encoding.UTF8.GetString(body.ToArray()));
+
+        var fullBody = new MemoryStream();
+        controller.ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = Principal(1, "TECH_AI") } };
+        controller.HttpContext.Request.Method = HttpMethods.Get;
+        controller.HttpContext.Response.Body = fullBody;
+        Assert.IsType<EmptyResult>(await controller.Stream(1, token, CancellationToken.None));
+        Assert.Equal(StatusCodes.Status200OK, controller.HttpContext.Response.StatusCode);
+        Assert.Equal(bytes.Length, controller.HttpContext.Response.ContentLength);
+        Assert.Equal(bytes, fullBody.ToArray());
     }
 
     [Fact]
@@ -325,13 +367,13 @@ public sealed class FeatureRegressionTests
         });
         await db.SaveChangesAsync();
 
-        var lecturer = WithUser(new SessionsController(db, null!, EmptyConfiguration(), new AuditSpy(), null!), ids.UserA, "LECTURER");
+        var lecturer = WithUser(new SessionsController(db, null!, TestAi(), EmptyConfiguration(), new AuditSpy(), null!), ids.UserA, "LECTURER");
         Assert.IsType<ForbidResult>(await lecturer.AssignSubstitution(
             ids.SessionA,
             new(ids.TeacherB, "Không có quyền", null),
             CancellationToken.None));
 
-        var departmentHead = WithUser(new SessionsController(db, null!, EmptyConfiguration(), new AuditSpy(), null!), ids.HeadUser, "LECTURER");
+        var departmentHead = WithUser(new SessionsController(db, null!, TestAi(), EmptyConfiguration(), new AuditSpy(), null!), ids.HeadUser, "LECTURER");
         Assert.IsType<BadRequestObjectResult>(await departmentHead.AssignSubstitution(
             ids.SessionA,
             new(ids.TeacherA, "Không được tự thay chính mình", null),
@@ -374,7 +416,7 @@ public sealed class FeatureRegressionTests
         db.ManagementAssignmentsSet.Add(new ManagementAssignment { TeacherId = ids.HeadTeacher, PositionType = "DEPARTMENT_HEAD", DepartmentId = ids.Department1, IsActive = true });
         db.SessionSubstitutionsSet.Add(new SessionSubstitution { SessionId = ids.SessionA, OriginalTeacherId = ids.TeacherA, SubstituteTeacherId = ids.TeacherB, Reason = "Bận", Status = "ACTIVE" });
         await db.SaveChangesAsync();
-        var controller = WithUser(new SessionsController(db, null!, EmptyConfiguration(), new AuditSpy(), null!), ids.HeadUser, "LECTURER");
+        var controller = WithUser(new SessionsController(db, null!, TestAi(), EmptyConfiguration(), new AuditSpy(), null!), ids.HeadUser, "LECTURER");
 
         Assert.IsType<NoContentResult>(await controller.CancelSubstitution(ids.SessionA, CancellationToken.None));
         Assert.True(await AccessScope.CanOperateSessionAsync(db, Principal(ids.UserA, "LECTURER"), ids.SessionA, CancellationToken.None));
@@ -390,7 +432,7 @@ public sealed class FeatureRegressionTests
         db.ManagementAssignmentsSet.Add(new ManagementAssignment { TeacherId = ids.HeadTeacher, PositionType = "DEPARTMENT_HEAD", DepartmentId = ids.Department1, IsActive = true });
         db.SessionSubstitutionsSet.Add(new SessionSubstitution { SessionId = ids.SessionA, OriginalTeacherId = ids.TeacherA, SubstituteTeacherId = ids.TeacherB, Reason = "Bận", Status = "ACTIVE" });
         await db.SaveChangesAsync();
-        var controller = WithUser(new SessionsController(db, null!, EmptyConfiguration(), new AuditSpy(), null!), ids.HeadUser, "LECTURER");
+        var controller = WithUser(new SessionsController(db, null!, TestAi(), EmptyConfiguration(), new AuditSpy(), null!), ids.HeadUser, "LECTURER");
 
         Assert.IsType<ConflictObjectResult>(await controller.CancelSubstitution(ids.SessionA, CancellationToken.None));
         Assert.Equal("ACTIVE", (await db.SessionSubstitutionsSet.SingleAsync()).Status);
@@ -426,17 +468,17 @@ public sealed class FeatureRegressionTests
     }
 
     [Fact]
-    public async Task Admin_cannot_create_session_read_report_or_replace_roster()
+    public async Task Admin_cannot_change_academic_data_but_can_read_system_report()
     {
         await using var db = CreateDb();
         var ids = await SeedScopeFixture(db);
         var sessionRequest = new CreateSessionRequest(401, null, 1, null, 501, DateTime.UtcNow.AddDays(5), DateTime.UtcNow.AddDays(5).AddHours(2), [], "DEFAULT");
-        var sessions = WithAdmin(new SessionsController(db, null!, EmptyConfiguration(), new AuditSpy(), null!));
+        var sessions = WithAdmin(new SessionsController(db, null!, TestAi(), EmptyConfiguration(), new AuditSpy(), null!));
         var reports = WithAdmin(new ReportsController(db, null!));
         var catalogs = WithAdmin(new CatalogsController(db, new AuditSpy()));
 
         Assert.IsType<ForbidResult>(await sessions.Create(sessionRequest, CancellationToken.None));
-        Assert.IsType<ForbidResult>(await reports.Session(ids.SessionA, CancellationToken.None));
+        Assert.IsType<OkObjectResult>(await reports.Session(ids.SessionA, CancellationToken.None));
         Assert.IsType<ForbidResult>(await catalogs.SetRoster(401, new CatalogsController.RosterReq([]), CancellationToken.None));
     }
 
@@ -463,7 +505,7 @@ public sealed class FeatureRegressionTests
         db.ManagementAssignmentsSet.Add(new ManagementAssignment { TeacherId = ids.HeadTeacher, PositionType = "DEPARTMENT_HEAD", DepartmentId = ids.Department1, IsActive = true });
         db.SessionSubstitutionsSet.Add(new SessionSubstitution { SessionId = ids.SessionA, OriginalTeacherId = ids.TeacherA, SubstituteTeacherId = ids.TeacherB, Reason = "Existing", Status = "ACTIVE" });
         await db.SaveChangesAsync();
-        var controller = WithUser(new SessionsController(db, null!, EmptyConfiguration(), new AuditSpy(), null!), ids.HeadUser, "LECTURER");
+        var controller = WithUser(new SessionsController(db, null!, TestAi(), EmptyConfiguration(), new AuditSpy(), null!), ids.HeadUser, "LECTURER");
 
         Assert.IsType<ConflictObjectResult>(await controller.AssignSubstitution(ids.SessionA, new(ids.TeacherB, "Again", null), CancellationToken.None));
     }
@@ -475,7 +517,7 @@ public sealed class FeatureRegressionTests
         var ids = await SeedScopeFixture(db);
         db.ManagementAssignmentsSet.Add(new ManagementAssignment { TeacherId = ids.HeadTeacher, PositionType = "DEPARTMENT_HEAD", DepartmentId = ids.Department1, IsActive = true });
         await db.SaveChangesAsync();
-        var controller = WithUser(new SessionsController(db, null!, EmptyConfiguration(), new AuditSpy(), null!), ids.HeadUser, "LECTURER");
+        var controller = WithUser(new SessionsController(db, null!, TestAi(), EmptyConfiguration(), new AuditSpy(), null!), ids.HeadUser, "LECTURER");
 
         (await db.Teachers.FindAsync(ids.TeacherB))!.IsActive = false;
         await db.SaveChangesAsync();
@@ -496,7 +538,7 @@ public sealed class FeatureRegressionTests
         var target = await db.SessionsSet.FindAsync(ids.SessionA);
         db.SessionsSet.Add(new Session { Id = 604, ClassSectionId = 402, OriginalTeacherId = ids.TeacherB, AttendancePolicyId = 501, ScheduledStart = target!.ScheduledStart.AddMinutes(30), ScheduledEnd = target.ScheduledEnd, Status = "READY" });
         await db.SaveChangesAsync();
-        var controller = WithUser(new SessionsController(db, null!, EmptyConfiguration(), new AuditSpy(), null!), ids.HeadUser, "LECTURER");
+        var controller = WithUser(new SessionsController(db, null!, TestAi(), EmptyConfiguration(), new AuditSpy(), null!), ids.HeadUser, "LECTURER");
 
         Assert.IsType<ConflictObjectResult>(await controller.AssignSubstitution(ids.SessionA, new(ids.TeacherB, "Conflict", null), CancellationToken.None));
     }
@@ -524,6 +566,36 @@ public sealed class FeatureRegressionTests
         Assert.True(await HTBAM.Api.Support.AccessScope.CanViewSessionAsync(db, Principal(ids.HeadUser, "LECTURER"), ids.SessionA, CancellationToken.None));
         Assert.True(await HTBAM.Api.Support.AccessScope.CanViewSessionAsync(db, Principal(ids.HeadUser, "LECTURER"), ids.SessionB, CancellationToken.None));
         Assert.False(await HTBAM.Api.Support.AccessScope.CanViewSessionAsync(db, Principal(ids.HeadUser, "LECTURER"), ids.SessionC, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Report_options_and_detail_enforce_admin_faculty_department_and_lecturer_substitute_scopes()
+    {
+        await using var db = CreateDb();
+        var ids = await SeedScopeFixture(db);
+        db.ManagementAssignmentsSet.AddRange(
+            new ManagementAssignment { TeacherId = ids.HeadTeacher, PositionType = "FACULTY_HEAD", FacultyId = ids.Faculty1, IsActive = true, EffectiveFrom = DateTime.UtcNow.AddDays(-1) },
+            new ManagementAssignment { TeacherId = ids.TeacherB, PositionType = "DEPARTMENT_HEAD", DepartmentId = ids.Department1, IsActive = true, EffectiveFrom = DateTime.UtcNow.AddDays(-1) });
+        db.SessionSubstitutionsSet.Add(new SessionSubstitution { SessionId = ids.SessionC, OriginalTeacherId = ids.TeacherC, SubstituteTeacherId = ids.TeacherA, Reason = "Dạy thay", Status = "ACTIVE" });
+        await db.SaveChangesAsync();
+
+        var admin = WithAdmin(new ReportsController(db, null!));
+        var facultyHead = WithUser(new ReportsController(db, null!), ids.HeadUser, "LECTURER");
+        var departmentHead = WithUser(new ReportsController(db, null!), ids.UserB, "LECTURER");
+        var lecturer = WithUser(new ReportsController(db, null!), ids.UserA, "LECTURER");
+
+        Assert.Equal([ids.SessionA, ids.SessionB, ids.SessionC], ResultIds(await admin.Options("sessions", CancellationToken.None)));
+        Assert.Equal([ids.SessionA, ids.SessionB], ResultIds(await facultyHead.Options("sessions", CancellationToken.None)));
+        Assert.Equal([ids.SessionA, ids.SessionB], ResultIds(await departmentHead.Options("sessions", CancellationToken.None)));
+        Assert.Equal([ids.SessionA, ids.SessionC], ResultIds(await lecturer.Options("sessions", CancellationToken.None)));
+
+        Assert.IsType<OkObjectResult>(await admin.Session(ids.SessionC, CancellationToken.None));
+        Assert.IsType<OkObjectResult>(await facultyHead.Session(ids.SessionB, CancellationToken.None));
+        Assert.IsType<ForbidResult>(await facultyHead.Session(ids.SessionC, CancellationToken.None));
+        Assert.IsType<OkObjectResult>(await departmentHead.Session(ids.SessionA, CancellationToken.None));
+        Assert.IsType<ForbidResult>(await departmentHead.Session(ids.SessionC, CancellationToken.None));
+        Assert.IsType<OkObjectResult>(await lecturer.Session(ids.SessionC, CancellationToken.None));
+        Assert.IsType<ForbidResult>(await lecturer.Session(ids.SessionB, CancellationToken.None));
     }
 
     [Fact]
@@ -623,8 +695,10 @@ public sealed class FeatureRegressionTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => service.StopAsync(1, CancellationToken.None));
         Assert.Single(await db.VideosSet.Where(x => x.VideoType == "ANNOTATED_OUTPUT").ToListAsync());
         Assert.Equal("FINALIZE_FAILED", (await db.SessionsSet.FindAsync(1L))!.Status);
+        Assert.Null((await db.SessionsSet.FindAsync(1L))!.EndedAt);
 
         await service.RetryFinalizeAsync(1, CancellationToken.None);
+        Assert.Equal([1L], await service.ProcessPendingFinalizationsAsync(CancellationToken.None));
 
         Assert.Single(await db.VideosSet.Where(x => x.VideoType == "ANNOTATED_OUTPUT").ToListAsync());
         Assert.Equal("COMPLETED", (await db.SessionsSet.FindAsync(1L))!.Status);
@@ -634,7 +708,7 @@ public sealed class FeatureRegressionTests
     }
 
     [Fact]
-    public async Task Faculty_head_transfer_keeps_history_and_only_one_active_head()
+    public async Task Faculty_head_cannot_transfer_own_position_without_admin()
     {
         await using var db = CreateDb();
         var ids = await SeedScopeFixture(db);
@@ -644,11 +718,10 @@ public sealed class FeatureRegressionTests
 
         var result = await controller.TransferFacultyHead(new ManagementAssignmentsController.AssignFacultyHeadRequest(ids.TeacherA, ids.Faculty1, "transfer"), CancellationToken.None);
 
-        Assert.IsType<OkObjectResult>(result);
+        Assert.IsType<ForbidResult>(result);
         var all = await db.ManagementAssignmentsSet.Where(x => x.PositionType == "FACULTY_HEAD" && x.FacultyId == ids.Faculty1).ToListAsync();
-        Assert.Equal(2, all.Count);
+        Assert.Single(all);
         Assert.Single(all, x => x.IsActive);
-        Assert.Contains(all, x => !x.IsActive && x.EffectiveTo != null);
     }
 
     [Fact]
@@ -718,7 +791,7 @@ public sealed class FeatureRegressionTests
             CancellationToken.None));
         var body = Assert.IsType<ApiErrorResponse>(duplicate.Value);
         Assert.Equal("DUPLICATE_FIELDS", body.Code);
-        Assert.Equal(["anonymousCode", "email", "studentCode"], body.Errors!.Select(x => x.Field).OrderBy(x => x).ToArray());
+        Assert.Equal(["email", "studentCode"], body.Errors!.Select(x => x.Field).OrderBy(x => x).ToArray());
 
         var codeDuplicate = Assert.IsType<ConflictObjectResult>(await controller.Create(
             new UpsertStudentRequest(" sv001 ", "Other", "unique-code@example.test", 10, "ANON-CODE", true),
@@ -728,17 +801,17 @@ public sealed class FeatureRegressionTests
             new UpsertStudentRequest("SV-EMAIL", "Other", " SV001@EXAMPLE.TEST ", 10, "ANON-EMAIL", true),
             CancellationToken.None));
         AssertDuplicate(emailDuplicate, "STUDENT_EMAIL_DUPLICATE", "email", "Email SV001@EXAMPLE.TEST đã được sử dụng.");
-        var anonymousDuplicate = Assert.IsType<ConflictObjectResult>(await controller.Create(
+        Assert.IsType<CreatedAtActionResult>(await controller.Create(
             new UpsertStudentRequest("SV-ANON", "Other", "unique-anon@example.test", 10, " anon-001 ", true),
             CancellationToken.None));
-        AssertDuplicate(anonymousDuplicate, "STUDENT_ANONYMOUS_CODE_DUPLICATE", "anonymousCode", "Mã ẩn danh 'anon-001' đã tồn tại.");
+        Assert.StartsWith("SV-", (await db.StudentsSet.SingleAsync(x => x.StudentCode == "SV-ANON")).AnonymousCode);
 
         var selfUpdate = await controller.Update(20,
             new UpsertStudentRequest(" sv001 ", "Existing", " SV001@EXAMPLE.TEST ", 10, " anon-001 ", true),
             CancellationToken.None);
         Assert.IsType<NoContentResult>(selfUpdate);
 
-        db.StudentsSet.Add(new Student { Id = 21, StudentCode = "SV002", FullName = "Other", Email = "sv002@example.test", StudentClassId = 10, AnonymousCode = "ANON-002", IsActive = true });
+        db.StudentsSet.Add(new Student { Id = 30, StudentCode = "SV002", FullName = "Other", Email = "sv002@example.test", StudentClassId = 10, AnonymousCode = "ANON-002", IsActive = true });
         await db.SaveChangesAsync();
         var otherConflict = Assert.IsType<ConflictObjectResult>(await controller.Update(20,
             new UpsertStudentRequest("sv002", "Existing", "sv001@example.test", 10, "ANON-001", true),
@@ -756,9 +829,9 @@ public sealed class FeatureRegressionTests
         await db.SaveChangesAsync();
         var controller = WithAdmin(new CatalogsController(db, new AuditSpy()));
 
-        var duplicate = Assert.IsType<ConflictObjectResult>(await controller.AddRoom(
+        Assert.IsType<OkObjectResult>(await controller.AddRoom(
             new CatalogsController.RoomReq(" a101 ", "Other", null, 20, null), CancellationToken.None));
-        AssertDuplicate(duplicate, "ROOM_CODE_DUPLICATE", "code");
+        Assert.StartsWith("PH-", (await db.Rooms.SingleAsync(x => x.Name == "Other")).Code);
         Assert.IsType<NoContentResult>(await controller.UpdateRoom(1,
             new CatalogsController.RoomReq(" a101 ", "Room", null, 20, null), CancellationToken.None));
         Assert.IsType<NoContentResult>(await controller.ReactivateCatalog("rooms", 2, CancellationToken.None));
@@ -766,7 +839,7 @@ public sealed class FeatureRegressionTests
     }
 
     [Fact]
-    public async Task Catalog_unique_codes_return_entity_specific_conflicts()
+    public async Task Catalog_codes_are_generated_immutable_and_legacy_class_writes_are_blocked()
     {
         await using var db = CreateDb();
         await SeedFacultyHead(db);
@@ -781,22 +854,22 @@ public sealed class FeatureRegressionTests
         var academic = WithUser(new CatalogsController(db, new AuditSpy()), 100, "LECTURER");
         var admin = WithAdmin(new CatalogsController(db, new AuditSpy()));
 
-        AssertDuplicate(Assert.IsType<ConflictObjectResult>(await academic.UpdateFaculty(1,
-            new CatalogsController.FacultyReq(" f2 ", "Faculty", null), CancellationToken.None)), "FACULTY_CODE_DUPLICATE", "code");
-        AssertDuplicate(Assert.IsType<ConflictObjectResult>(await academic.AddDepartment(
-            new CatalogsController.DepartmentReq(" d1 ", "Department", 1, null), CancellationToken.None)), "DEPARTMENT_CODE_DUPLICATE", "code");
-        AssertDuplicate(Assert.IsType<ConflictObjectResult>(await academic.AddStudentClass(
-            new CatalogsController.StudentClassReq(" sc1 ", "Class", 1, 2026, null), CancellationToken.None)), "STUDENT_CLASS_CODE_DUPLICATE", "code");
-        AssertDuplicate(Assert.IsType<ConflictObjectResult>(await academic.AddCourse(
-            new CatalogsController.CourseReq(" c1 ", "Course", 1, 3, null), CancellationToken.None)), "COURSE_CODE_DUPLICATE", "code");
-        AssertDuplicate(Assert.IsType<ConflictObjectResult>(await academic.AddTeacher(
-            new CatalogsController.TeacherReq(" gv1 ", "Teacher", "", null, 1, null), CancellationToken.None)), "TEACHER_CODE_DUPLICATE", "teacherCode");
-        AssertDuplicate(Assert.IsType<ConflictObjectResult>(await academic.AddClass(
-            new CatalogsController.ClassReq(" cs1 ", "Section", 20, 30, "HK1", "2026", null), CancellationToken.None)), "CLASS_SECTION_CODE_DUPLICATE", "code");
-        AssertDuplicate(Assert.IsType<ConflictObjectResult>(await admin.AddRoom(
-            new CatalogsController.RoomReq(" r1 ", "Room", null, 10, null), CancellationToken.None)), "ROOM_CODE_DUPLICATE", "code");
-        AssertDuplicate(Assert.IsType<ConflictObjectResult>(await admin.AddCamera(
-            new CatalogsController.CameraReq(" cam1 ", "Camera", 50, "rtsp://camera.test/other", null), CancellationToken.None)), "CAMERA_CODE_DUPLICATE", "code");
+        Assert.IsType<NoContentResult>(await academic.UpdateFaculty(1,
+            new CatalogsController.FacultyReq(" f2 ", "Faculty", null), CancellationToken.None));
+        Assert.Equal("F1", (await db.FacultiesSet.FindAsync(1L))!.Code);
+        Assert.IsType<OkObjectResult>(await academic.AddDepartment(new(" d1 ", "Department", 1, null), CancellationToken.None));
+        Assert.IsType<OkObjectResult>(await academic.AddStudentClass(new(" sc1 ", "Class", 1, 2026, null), CancellationToken.None));
+        (await db.DepartmentsSet.FindAsync(1L))!.Code="BM-CNPM";await db.SaveChangesAsync();
+        Assert.IsType<OkObjectResult>(await academic.AddCourse(new(null, "Course", 1, 3, null), CancellationToken.None));
+        Assert.IsType<OkObjectResult>(await academic.AddTeacher(new(" gv1 ", "Teacher", "", null, 1, null), CancellationToken.None));
+        Assert.IsType<ConflictObjectResult>(await academic.AddClass(new(" cs1 ", "Section", 20, 30, "HK1", "2026", null), CancellationToken.None));
+        Assert.IsType<OkObjectResult>(await admin.AddRoom(new(" r1 ", "Room", null, 10, null), CancellationToken.None));
+        Assert.IsType<OkObjectResult>(await admin.AddCamera(new(" cam1 ", "Camera", 50, "rtsp://camera.test/other", null), CancellationToken.None));
+        Assert.Contains(await db.DepartmentsSet.ToListAsync(), x => x.Code.StartsWith("BM-"));
+        Assert.Contains(await db.StudentClassesSet.ToListAsync(), x => x.Code.StartsWith("LSH-"));
+        Assert.Contains(await db.Courses.ToListAsync(), x => x.Code.StartsWith("MH-"));
+        Assert.Contains(await db.Teachers.ToListAsync(), x => x.TeacherCode.StartsWith("GV-"));
+        Assert.Single(await db.ClassSections.ToListAsync());
     }
 
     [Fact]
@@ -821,7 +894,7 @@ public sealed class FeatureRegressionTests
         Assert.IsType<NoContentResult>(await academic.UpdateStudentClass(10, new(" sc1 ", "Class", 1, 2026, null), CancellationToken.None));
         Assert.IsType<NoContentResult>(await academic.UpdateCourse(20, new(" c1 ", "Course", 1, 3, null), CancellationToken.None));
         Assert.IsType<NoContentResult>(await academic.UpdateTeacher(30, new(" gv1 ", "Teacher", "teacher@example.test", 200, 1, null), CancellationToken.None));
-        Assert.IsType<NoContentResult>(await academic.UpdateClass(40, new(" cs1 ", "Section", 20, 30, "HK1", "2026", null), CancellationToken.None));
+        Assert.IsType<ConflictObjectResult>(await academic.UpdateClass(40, new(" cs1 ", "Section", 20, 30, "HK1", "2026", null), CancellationToken.None));
 
         var admin = WithAdmin(new CatalogsController(db, new AuditSpy()));
         Assert.IsType<NoContentResult>(await admin.UpdateRoom(50, new(" r1 ", "Room", null, 20, null), CancellationToken.None));
@@ -877,8 +950,8 @@ public sealed class FeatureRegressionTests
         var controller = WithUser(new AttendancePoliciesController(db, new AuditSpy()), 100, "LECTURER");
         var request = new AttendancePoliciesController.Req(" default ", "Other", .8m, .5m, 10, 5, 0, "v1");
 
-        var duplicate = Assert.IsType<ConflictObjectResult>(await controller.Create(request, CancellationToken.None));
-        AssertDuplicate(duplicate, "ATTENDANCE_POLICY_CODE_DUPLICATE", "code");
+        Assert.IsType<OkObjectResult>(await controller.Create(request, CancellationToken.None));
+        Assert.StartsWith("CC-", (await db.AttendancePoliciesSet.SingleAsync(x => x.Id != 20)).Code);
         Assert.IsType<NoContentResult>(await controller.Deactivate(20, CancellationToken.None));
         Assert.False((await db.AttendancePoliciesSet.FindAsync(20L))!.IsActive);
         Assert.IsType<NoContentResult>(await controller.Reactivate(20, CancellationToken.None));
@@ -982,7 +1055,7 @@ public sealed class FeatureRegressionTests
     }
 
     private static AppDbContext CreateDb() => new(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString("N")).Options);
-    private static IConfiguration EmptyConfiguration() => new ConfigurationBuilder().AddInMemoryCollection().Build();
+    private static IConfiguration EmptyConfiguration() => new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Jwt:Secret"] = new string('x', 64) }).Build();
     private static FormFile File(string csv)
     {
         var bytes = new UTF8Encoding(true).GetBytes(csv);
@@ -1091,29 +1164,41 @@ public sealed class FeatureRegressionTests
     {
         public bool Exists { get; init; }
         public string? LastReadKey { get; private set; }
+        public string? LastStatKey { get; private set; }
+        public long LastOffset { get; private set; }
+        public long LastLength { get; private set; }
+        public byte[] Bytes { get; init; } = Encoding.UTF8.GetBytes("fake-video-content");
         public Task EnsureReadyAsync(CancellationToken ct = default) => Task.CompletedTask;
         public Task PutAsync(string objectKey, Stream stream, long sizeBytes, string contentType, CancellationToken ct = default) => Task.CompletedTask;
         public Task DeleteAsync(string objectKey, CancellationToken ct = default) => Task.CompletedTask;
         public Task<string> GetReadUrlAsync(string objectKey, int expirySeconds = 900, CancellationToken ct = default) { LastReadKey = objectKey; return Task.FromResult($"https://storage.test/{objectKey}"); }
         public Task<string> GetInternalReadUrlAsync(string objectKey, int expirySeconds = 900, CancellationToken ct = default) => GetReadUrlAsync(objectKey, expirySeconds, ct);
         public Task<string> GetInternalWriteUrlAsync(string objectKey, int expirySeconds = 900, CancellationToken ct = default) => Task.FromResult($"https://storage.test/{objectKey}");
+        public Task<ObjectStorageMetadata?> StatAsync(string objectKey, CancellationToken ct = default) { LastStatKey = objectKey; return Task.FromResult<ObjectStorageMetadata?>(Exists ? new(Bytes.LongLength, "video/mp4") : null); }
+        public async Task CopyRangeToAsync(string objectKey, long offset, long length, Stream destination, CancellationToken ct = default) { LastReadKey = objectKey; LastOffset = offset; LastLength = length; await destination.WriteAsync(Bytes.AsMemory((int)offset, (int)length), ct); }
         public Task<bool> ExistsAsync(string objectKey, CancellationToken ct = default) => Task.FromResult(Exists);
         public Task<bool> HealthAsync(CancellationToken ct = default) => Task.FromResult(true);
     }
+
+    private static IAiClient TestAi() => new FakeAi(new AiArtifactMetadata("test.mp4", "test.mp4", "video/mp4", 1, new string('a', 64)));
 
     private sealed class FakeAi(AiArtifactMetadata artifact) : IAiClient
     {
         public Task<StartAiJobResponse> StartAsync(StartAiJobRequest request, CancellationToken ct = default) => Task.FromResult(new StartAiJobResponse("job", "RUNNING", "test"));
         public Task<StopAiJobResponse> StopAsync(string externalJobId, CancellationToken ct = default) => Task.FromResult(new StopAiJobResponse(externalJobId, "COMPLETED", artifact));
+        public Task<StopAiJobResponse> GetJobAsync(string externalJobId, CancellationToken ct = default) => Task.FromResult(new StopAiJobResponse(externalJobId, "COMPLETED", artifact));
         public Task<AiCapabilitiesResponse> CapabilitiesAsync(CancellationToken ct = default) => Task.FromResult(new AiCapabilitiesResponse(true, false, true, ["test"]));
         public Task<StartFaceEnrollmentResponse> StartFaceEnrollmentAsync(FaceEnrollmentManifest request, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task UploadBrowserChunkAsync(string externalJobId, Stream stream, string fileName, string contentType, CancellationToken ct = default) => Task.CompletedTask;
+        public Task<(byte[] Data, string ContentType)?> GetOverlayPreviewAsync(string externalJobId, CancellationToken ct = default) => Task.FromResult<(byte[] Data, string ContentType)?>(null);
+        public Task<string?> FastOverlayAsync(string externalJobId, Stream stream, string fileName, string contentType, CancellationToken ct = default) => Task.FromResult<string?>(null);
         public Task<bool> HealthAsync(CancellationToken ct = default) => Task.FromResult(true);
     }
 
     private sealed class FlakySummary : ISummaryService
     {
         private int attempts;
-        public Task RebuildSessionAsync(long sessionId, CancellationToken ct)
+        public Task RebuildSessionAsync(long sessionId, DateTime endedAt, CancellationToken ct)
         {
             if (Interlocked.Increment(ref attempts) == 1) throw new InvalidOperationException("Lỗi tổng hợp tạm thời");
             return Task.CompletedTask;

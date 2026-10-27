@@ -26,11 +26,11 @@ import { PageTitleComponent, errorText, roleText, statusText } from '../shared/u
           <div class="avatar large">{{ initials() }}</div>
           <h2>{{ me()!.fullName }}</h2>
           <p>{{ me()!.email || 'Chưa có email' }}</p>
-          <span class="badge blue">{{ roles() }}</span>
+          <span class="badge blue">{{ auth.positionLabel() }}</span>
           <div class="profile-list">
             <div><span>Tên đăng nhập</span><strong>{{ me()!.userName }}</strong></div>
             <div><span>Trạng thái</span><strong>{{ statusText(me()!.status) }}</strong></div>
-            <div><span>Vai trò</span><strong>{{ roles() }}</strong></div>
+            <div><span>Chức vụ</span><strong>{{ auth.positionLabel() }}</strong></div>
           </div>
         }
       </section>
@@ -57,7 +57,7 @@ import { PageTitleComponent, errorText, roleText, statusText } from '../shared/u
   `,
 })
 export class AccountComponent implements OnInit {
-  private readonly auth = inject(AuthService);
+  readonly auth = inject(AuthService);
   private readonly fb = inject(FormBuilder);
 
   readonly me = signal<UserInfo | null>(null);

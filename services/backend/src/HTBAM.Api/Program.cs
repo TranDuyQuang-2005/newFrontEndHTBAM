@@ -15,7 +15,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using QuestPDF.Infrastructure;
 
-var builder = WebApplication.CreateBuilder(args);
+var migrationMode = args.Contains("--migrate");
+var seedMode = args.Contains("--seed");
+var builder = WebApplication.CreateBuilder(args.Where(x => x is not ("--migrate" or "--seed")).ToArray());
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -60,6 +62,7 @@ builder.Services.AddScoped<IAlertEngine, AlertEngine>();
 builder.Services.AddScoped<IFaceEnrollmentService, FaceEnrollmentService>();
 builder.Services.AddScoped<ISummaryService, SummaryService>();
 builder.Services.AddScoped<ISessionService, SessionService>();
+builder.Services.AddHostedService<SessionFinalizationWorker>();
 builder.Services.AddScoped<IAiEventService, AiEventService>();
 builder.Services.AddScoped<IAutoCommentService, AutoCommentService>();
 builder.Services.AddSingleton<GeminiLlmProvider>();
@@ -201,6 +204,52 @@ QuestPDF.Settings.License =
 
 var app = builder.Build();
 
+if (migrationMode)
+{
+    try
+    {
+        await SqlMigrationRunner.RunAsync(builder.Configuration.GetConnectionString("SqlServer")!,
+            SqlMigrationRunner.FindDirectory(builder.Configuration["Database:MigrationDirectory"]), Console.WriteLine,
+            readinessTimeout: TimeSpan.FromSeconds(Math.Clamp(builder.Configuration.GetValue("Database:ReadinessTimeoutSeconds", 120), 1, 600)));
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Migration thất bại: {ex.Message} Nguyên nhân: {ex.GetBaseException().Message}");
+        Environment.ExitCode = ex is TimeoutException ? 2 : 1;
+    }
+    return;
+}
+
+if (seedMode)
+{
+    try
+    {
+    using var seedScope = app.Services.CreateScope();
+    var seedDb = seedScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    await SqlMigrationRunner.VerifyAsync(seedDb, SqlMigrationRunner.FindDirectory(builder.Configuration["Database:MigrationDirectory"]));
+    await BusinessTransaction.Run(seedDb, "HTBAM:system-seed", async () =>
+    {
+        await SystemSeed.SeedAsync(seedDb);
+        await AcademicSeed.SeedAsync(seedDb);
+        return true;
+    }, CancellationToken.None);
+    seedDb.DevelopmentDataEnabled = app.Environment.IsDevelopment() && builder.Configuration.GetValue("Seed:Development", false);
+    if (seedDb.DevelopmentDataEnabled)
+    {
+        await DemoDataSeeder.SeedAsync(seedDb, builder.Configuration["SEED_DEFAULT_PASSWORD"]);
+        Console.WriteLine("Development seed complete. Accounts (passwords and hashes omitted):");
+        foreach (var name in DemoDataSeeder.Accounts) Console.WriteLine($"demo.{name}: {(name == "admin" ? "ADMIN" : "LECTURER")} / {name}");
+    }
+    else Console.WriteLine("Development seed disabled. No demo accounts or records created.");
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Seed thất bại: {ex.Message}");
+        Environment.ExitCode = 1;
+    }
+    return;
+}
+
 app.UseMiddleware<ApiExceptionMiddleware>();
 
 app.UseForwardedHeaders(
@@ -266,28 +315,8 @@ using (var scope = app.Services.CreateScope())
         logger,
         "SQL Server");
 
-    if (
-        builder.Configuration.GetValue(
-            "Database:EnsureCreated",
-            false))
-    {
-        await RetryAsync(
-            () => db.Database.EnsureCreatedAsync(),
-            logger,
-            "Database EnsureCreated");
-    }
-
-    if (
-        app.Environment.IsDevelopment() &&
-        builder.Configuration.GetValue(
-            "Seed:Development",
-            true))
-    {
-        await RetryAsync(
-            () => DevelopmentSeeder.SeedAsync(db),
-            logger,
-            "Development seed");
-    }
+    // Schema mistakes are permanent until migrated: do not retry seed queries for a minute.
+    await SqlMigrationRunner.VerifyAsync(db, SqlMigrationRunner.FindDirectory(builder.Configuration["Database:MigrationDirectory"]));
 
     if (
         builder.Configuration.GetValue(
@@ -304,6 +333,13 @@ using (var scope = app.Services.CreateScope())
             "MinIO");
     }
 }
+
+app.Use(async (context, next) =>
+{
+    var db = context.RequestServices.GetRequiredService<AppDbContext>();
+    db.DevelopmentDataEnabled = app.Environment.IsDevelopment() && builder.Configuration.GetValue("Seed:Development", false);
+    await next();
+});
 
 app.Run();
 

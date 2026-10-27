@@ -32,7 +32,7 @@ import { ModalComponent, PageTitleComponent, RowActionMenuComponent, errorText, 
         <select [(ngModel)]="typeFilter">
           <option value="">Tất cả</option>
           <option value="INPUT_UPLOAD">Video tải lên</option>
-          <option value="ANNOTATED_OUTPUT">Video chú thích</option>
+          <option value="ANNOTATED_OUTPUT">Video đầu ra buổi học</option>
         </select>
       </label>
       <button type="button" class="secondary" (click)="clearFilters()">Xóa lọc</button>
@@ -59,7 +59,7 @@ import { ModalComponent, PageTitleComponent, RowActionMenuComponent, errorText, 
                 </td>
               </tr>
             } @empty {
-              <tr><td colspan="7" class="empty">Không có video phù hợp.</td></tr>
+              <tr><td colspan="7" class="empty">Không có video phù hợp. Buổi camera cũ chỉ xuất hiện ở đây nếu pipeline đã ghép và lưu artifact thành công; hệ thống không tự tạo video khi chunk nguồn không còn.</td></tr>
             }
           </tbody>
         </table>
@@ -85,13 +85,16 @@ import { ModalComponent, PageTitleComponent, RowActionMenuComponent, errorText, 
       </app-modal>
     }
 
-    @if (previewUrl()) {
-      <div class="modal-backdrop" (mousedown)="previewUrl.set('')">
-        <section class="modal-dialog modal-lg" (mousedown)="$event.stopPropagation()">
-          <header><h3>Xem trước video</h3><button type="button" class="modal-close" aria-label="Đóng" (click)="previewUrl.set('')">×</button></header>
-          <div class="modal-body"><video class="video-preview" controls autoplay [src]="previewUrl()"></video></div>
-        </section>
-      </div>
+    @if (previewVideo()) {
+      <app-modal title="Xem trước video" size="lg" (close)="closePreview()">
+        <p><strong>{{ previewVideo()!.fileName }}</strong></p>
+        @if (previewLoading()) { <div class="notice">Đang xác minh tệp trong kho lưu trữ…</div> }
+        @if (previewError()) { <div class="error-box">{{ previewError() }}</div> }
+        @if (previewUrl()) {
+          <video class="video-preview" controls autoplay tabindex="0" [src]="previewUrl()" (loadedmetadata)="onMetadata($event)" (error)="onVideoError()"></video>
+          @if (previewDuration() > 0) { <small>Thời lượng: {{ durationLabel() }}</small> }
+        }
+      </app-modal>
     }
 
     @if (pendingDelete()) {
@@ -115,6 +118,10 @@ export class VideosComponent implements OnInit {
   readonly uploadFile = signal<File | null>(null);
   readonly uploading = signal(false);
   readonly previewUrl = signal('');
+  readonly previewVideo = signal<Video | null>(null);
+  readonly previewLoading = signal(false);
+  readonly previewError = signal('');
+  readonly previewDuration = signal(0);
   readonly pendingDelete = signal<Video | null>(null);
   readonly date = fmtDate;
   search = '';
@@ -161,11 +168,21 @@ export class VideosComponent implements OnInit {
   }
 
   preview(video: Video): void {
+    this.previewVideo.set(video);
+    this.previewUrl.set('');
+    this.previewError.set('');
+    this.previewDuration.set(0);
+    this.previewLoading.set(true);
     this.api.previewVideo(video.id).subscribe({
-      next: (result) => this.previewUrl.set(result.url),
-      error: (error) => this.error.set(errorText(error)),
+      next: (result) => { this.previewUrl.set(result.url); this.previewLoading.set(false); },
+      error: (error) => { this.previewError.set(errorText(error)); this.previewLoading.set(false); },
     });
   }
+
+  closePreview(): void { this.previewUrl.set(''); this.previewVideo.set(null); this.previewError.set(''); this.previewDuration.set(0); }
+  onMetadata(event: Event): void { this.previewDuration.set(Number((event.target as HTMLVideoElement).duration) || 0); }
+  onVideoError(): void { this.previewError.set('Không thể phát video. Tệp có thể không tồn tại, liên kết đã hết hạn hoặc định dạng không được trình duyệt hỗ trợ.'); }
+  durationLabel(): string { const seconds = Math.round(this.previewDuration()); return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`; }
 
   remove(): void {
     const video = this.pendingDelete();
@@ -178,7 +195,7 @@ export class VideosComponent implements OnInit {
 
   clearFilters(): void { this.search = ''; this.statusFilter = ''; this.typeFilter = ''; }
   fileSize(bytes: number): string { return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`; }
-  typeLabel(type: Video['videoType']): string { return type === 'ANNOTATED_OUTPUT' ? 'Video chú thích' : 'Video tải lên'; }
+  typeLabel(type: Video['videoType']): string { return type === 'ANNOTATED_OUTPUT' ? 'Video đầu ra buổi học' : 'Video tải lên'; }
   sourceLabel(video: Video): string { return video.sourceType === 'CAMERA' ? 'Camera' : video.sourceType === 'VIDEO' ? (video.parentVideoName || 'Video nguồn') : 'Tải lên'; }
   statusLabel(status: string): string { return statusText(status); }
 }

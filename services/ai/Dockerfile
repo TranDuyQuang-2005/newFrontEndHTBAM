@@ -1,6 +1,7 @@
 FROM python:3.11-slim
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg libgl1 libglib2.0-0 build-essential gcc g++ libgles2 libegl1 && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core libgl1 libglib2.0-0 build-essential gcc g++ libgles2 libegl1 && rm -rf /var/lib/apt/lists/*
+RUN ffmpeg -hide_banner -encoders 2>&1 | grep -Eq '(^|[[:space:]])libx264([[:space:]]|$)'
 COPY requirements.txt .
 RUN python -m pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu130 torch==2.14.1 torchvision==0.29.1 && \

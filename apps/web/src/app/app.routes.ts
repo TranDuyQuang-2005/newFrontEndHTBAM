@@ -1,10 +1,15 @@
 import { Routes } from '@angular/router';
 import {
   academicGuard,
+  academicConfigurationGuard,
   adminGuard,
   authGuard,
   guestGuard,
   organizationGuard,
+  studentManagementGuard,
+  catalogGuard,
+  classSectionsGuard,
+  reportGuard,
 } from './core/auth.guard';
 import { ShellComponent } from './layout/shell.component';
 
@@ -32,7 +37,7 @@ export const routes: Routes = [
       },
       {
         path: 'students',
-        canActivate: [academicGuard],
+        canActivate: [studentManagementGuard],
         loadComponent: () =>
           import('./features/students.component').then(
             (module) => module.StudentsComponent,
@@ -40,7 +45,7 @@ export const routes: Routes = [
       },
       {
         path: 'students/:studentId/face-enrollment',
-        canActivate: [academicGuard],
+        canActivate: [studentManagementGuard],
         loadComponent: () =>
           import(
             './features/face-enrollment.component'
@@ -51,10 +56,22 @@ export const routes: Routes = [
       },
       {
         path: 'management',
+        canActivate: [catalogGuard],
+        runGuardsAndResolvers: 'paramsOrQueryParamsChange',
         loadComponent: () =>
           import('./features/management.component').then(
             (module) => module.ManagementComponent,
           ),
+      },
+      {
+        path: 'class-sections',
+        canActivate: [classSectionsGuard],
+        loadComponent: () => import('./features/management.component').then((module) => module.ManagementComponent),
+      },
+      {
+        path: 'academic-configuration',
+        canActivate: [academicConfigurationGuard],
+        loadComponent: () => import('./features/academic-configuration.component').then((module) => module.AcademicConfigurationComponent),
       },
       {
         path: 'organization',
@@ -106,7 +123,7 @@ export const routes: Routes = [
       },
       {
         path: 'reports',
-        canActivate: [academicGuard],
+        canActivate: [reportGuard],
         loadComponent: () =>
           import('./features/reports.component').then(
             (module) => module.ReportsComponent,

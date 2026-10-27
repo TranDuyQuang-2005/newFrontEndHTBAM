@@ -12,8 +12,9 @@ import { ModalComponent, PageTitleComponent, RowActionMenuComponent, errorText, 
   imports: [FormsModule, RouterLink, ModalComponent, PageTitleComponent, RowActionMenuComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <app-page-title title="Buổi học" subtitle="Quản lý phiên học theo phạm vi giảng dạy và quản lý.">
+    <app-page-title title="Buổi học" subtitle="Quản lý buổi thủ công và buổi được sinh từ lịch lớp học phần.">
       @if (auth.hasPermission('SESSION_CREATE_SCOPE')) { <button type="button" (click)="startAdd()">+ Thêm</button> }
+      <a class="button-link secondary" routerLink="/class-sections">Lịch lớp học phần</a>
     </app-page-title>
 
     @if (error()) { <div class="error-box">{{ error() }}</div> }
@@ -24,7 +25,7 @@ import { ModalComponent, PageTitleComponent, RowActionMenuComponent, errorText, 
     <div class="filter-bar">
       <label class="grow">Tìm buổi học<input [(ngModel)]="search" placeholder="ID hoặc lớp học phần" /></label>
       <label>Trạng thái
-        <select [(ngModel)]="statusFilter">
+        <select [(ngModel)]="statusFilter" (ngModelChange)="page=1;reloadSessions()">
           <option value="">Tất cả</option>
           <option value="RUNNING">Đang diễn ra</option>
           <option value="COMPLETED">Đã kết thúc</option>
@@ -33,7 +34,7 @@ import { ModalComponent, PageTitleComponent, RowActionMenuComponent, errorText, 
           <option value="CANCELLED">Đã hủy</option>
         </select>
       </label>
-      <button type="button" class="secondary" (click)="search='';statusFilter=''">Xóa lọc</button>
+      <button type="button" class="secondary" (click)="search='';statusFilter='';page=1;reloadSessions()">Xóa lọc</button>
     </div>
 
     <section class="card table-card">
@@ -43,7 +44,7 @@ import { ModalComponent, PageTitleComponent, RowActionMenuComponent, errorText, 
           <tbody>
             @for (session of filteredItems(); track session.id) {
               <tr>
-                <td class="cell-title">#{{ session.id }}</td>
+                <td class="cell-title">#{{ session.id }}<small>{{ session.classScheduleId ? 'Theo lịch lớp' : 'Tạo thủ công' }}</small></td>
                 <td>{{ sectionLabel(session.classSectionId) }}</td>
                 <td>
                   <div>Giảng viên phụ trách: {{ session.originalTeacherName || '-' }}</div>
@@ -52,13 +53,14 @@ import { ModalComponent, PageTitleComponent, RowActionMenuComponent, errorText, 
                   @else if (session.activeSubstitute) { <small><span class="badge purple">Đã giao cho {{ session.activeSubstitute.substituteTeacherName }}</span></small> }
                   @else if (session.substitution?.status === 'COMPLETED') { <small><span class="badge gray">Đã dạy thay bởi {{ session.substitution?.substituteTeacherName }}</span></small> }
                 </td>
-                <td><span class="badge" [class.purple]="session.videoId">{{ session.cameraId ? 'Camera' : session.videoId ? 'Video' : 'Chưa chọn' }}</span></td>
+                <td><span class="badge" [class.purple]="session.videoId" [class.warning]="!session.cameraId && !session.videoId">{{ sourceLabel(session) }}</span></td>
                 <td>{{ date(session.scheduledStart) }}<small>@if (session.scheduledEnd) { đến {{ date(session.scheduledEnd) }} }</small></td>
                 <td><span class="badge" [class.gray]="session.status === 'COMPLETED' || session.status === 'CANCELLED'" [class.blue]="session.status === 'READY' || session.status === 'DRAFT'">{{ statusLabel(session.status) }}</span></td>
                 <td class="menu-cell">
                   <app-row-action-menu>
                       <a [routerLink]="['/sessions', session.id]">Xem chi tiết</a>
-                      @if (session.canManage && (session.status === 'READY' || session.status === 'DRAFT')) { <button type="button" (click)="startEdit(session)">Sửa</button> }
+                      @if (session.canOperate && (session.status === 'READY' || session.status === 'DRAFT')) { <button type="button" (click)="editSource(session)">Chọn nguồn phân tích</button> }
+                      @if (!session.classScheduleId && session.canManage && (session.status === 'READY' || session.status === 'DRAFT')) { <button type="button" (click)="startEdit(session)">Sửa buổi thủ công</button> }
                       @if (auth.canAssignSubstitute() && !session.activeSubstitute && (session.status === 'READY' || session.status === 'DRAFT')) { <button type="button" (click)="assignSubstitute(session)">Phân công dạy thay</button> }
                       @if (auth.canAssignSubstitute() && session.activeSubstitute && (session.status === 'READY' || session.status === 'DRAFT')) { <button type="button" class="danger" (click)="askCancelSubstitute(session)">Hủy phân công dạy thay</button> }
                       @if (session.canManage && (session.status === 'READY' || session.status === 'DRAFT')) { <button type="button" class="danger" (click)="askCancelSession(session)">Hủy buổi học</button> }
@@ -71,6 +73,7 @@ import { ModalComponent, PageTitleComponent, RowActionMenuComponent, errorText, 
           </tbody>
         </table>
       </div>
+      <div class="pagination"><span>{{ total() }} buổi · Trang {{ page }}</span><div class="actions"><button type="button" class="secondary small" [disabled]="page <= 1 || loading()" (click)="page=page-1;reloadSessions()">Trước</button><button type="button" class="secondary small" [disabled]="page*pageSize >= total() || loading()" (click)="page=page+1;reloadSessions()">Sau</button></div></div>
     </section>
     @if (adding()) {
       <app-modal [title]="editingSessionId() ? 'Chỉnh sửa buổi học' : 'Thêm buổi học'" [busy]="saving()" size="lg" (close)="cancelAdd()">
@@ -85,6 +88,23 @@ import { ModalComponent, PageTitleComponent, RowActionMenuComponent, errorText, 
           <label>Giờ bắt đầu <span class="required">*</span><input name="startTime" type="time" [(ngModel)]="form.startTime" /></label>
           <label>Giờ kết thúc<input name="endTime" type="time" [(ngModel)]="form.endTime" /></label>
           <div class="modal-footer span2" style="margin:0 -20px -20px"><button type="button" class="secondary" [disabled]="saving()" (click)="cancelAdd()">Hủy</button><button type="submit" [disabled]="saving()">{{ saving() ? 'Đang lưu…' : 'Lưu' }}</button></div>
+        </form>
+      </app-modal>
+    }
+
+    @if (sourceSession()) {
+      <app-modal title="Nguồn phân tích buổi học" [busy]="sourceSaving()" size="md" (close)="closeSource()">
+        <p>Buổi #{{ sourceSession()!.id }} · {{ date(sourceSession()!.scheduledStart) }}</p>
+        @if (sourceSession()!.classScheduleId) { <p class="notice">Ngày, tiết, giờ và phòng được quản lý tại lịch lớp học phần. Chọn nguồn không tự khởi chạy camera hoặc AI.</p> }
+        @if (sourceError()) { <div class="error-box">{{ sourceError() }}</div> }
+        <form class="form-grid" (ngSubmit)="saveSource()">
+          <label>Nguồn dữ liệu <span class="required">*</span><select name="sourceType" [(ngModel)]="sourceForm.type"><option value="camera">Camera</option><option value="video">Video</option></select></label>
+          @if (sourceForm.type === 'camera') {
+            <label>Camera <span class="required">*</span><select name="sourceCamera" [(ngModel)]="sourceForm.cameraId"><option [ngValue]="null">-- Chọn camera --</option>@for (camera of camerasForSession(sourceSession()!); track camera.id) { <option [ngValue]="camera.id">{{ camera.code }} - {{ camera.name }}{{ camera.sourceMode === 'BROWSER' ? ' · BROWSER' : ' · RTSP' }}</option> }</select></label>
+          } @else {
+            <label>Video <span class="required">*</span><select name="sourceVideo" [(ngModel)]="sourceForm.videoId"><option [ngValue]="null">-- Chọn video --</option>@for (video of readyVideos(); track video.id) { <option [ngValue]="video.id">{{ video.fileName }}</option> }</select></label>
+          }
+          <div class="modal-footer span2" style="margin:0 -20px -20px"><button type="button" class="secondary" [disabled]="sourceSaving()" (click)="closeSource()">Hủy</button><button type="submit" [disabled]="sourceSaving()">{{ sourceSaving() ? 'Đang lưu…' : 'Lưu nguồn' }}</button></div>
         </form>
       </app-modal>
     }
@@ -111,6 +131,7 @@ export class SessionsComponent implements OnInit {
   private readonly api = inject(ApiService);
   readonly auth = inject(AuthService);
   readonly items = signal<Session[]>([]);
+  readonly total = signal(0);
   readonly sections = signal<ClassSection[]>([]);
   readonly rooms = signal<Room[]>([]);
   readonly cameras = signal<Camera[]>([]);
@@ -125,6 +146,9 @@ export class SessionsComponent implements OnInit {
   readonly saving = signal(false);
   readonly adding = signal(false);
   readonly editingSessionId = signal<number | null>(null);
+  readonly sourceSession = signal<Session | null>(null);
+  readonly sourceSaving = signal(false);
+  readonly sourceError = signal('');
   readonly substitutionSession = signal<Session | null>(null);
   readonly substitutionSaving = signal(false);
   readonly substitutionError = signal('');
@@ -134,18 +158,21 @@ export class SessionsComponent implements OnInit {
   readonly date = fmtDate;
   search = '';
   statusFilter = '';
+  page = 1;
+  readonly pageSize = 20;
   form = this.emptyForm();
+  sourceForm = { type: 'camera' as 'camera'|'video', cameraId: null as number|null, videoId: null as number|null };
   substitutionForm = { teacherId: null as number | null, reason: '', note: '' };
 
   ngOnInit(): void {
     this.loading.set(true);
     this.loadErrors.set({});
     forkJoin({
-      sessions: this.withFallback('sessions', [], this.api.sessions()), sections: this.withFallback('sections', [], this.api.classSections()), rooms: this.withFallback('rooms', [], this.api.rooms()),
+      sessions: this.withFallback('sessions', {items: [] as Session[], total: 0, page: 1, pageSize: this.pageSize}, this.api.sessionsPage({page:this.page,pageSize:this.pageSize})), sections: this.withFallback('sections', [], this.api.classSections()), rooms: this.withFallback('rooms', [], this.api.rooms()),
       cameras: this.withFallback('cameras', [], this.api.cameras()), videos: this.withFallback('videos', [], this.api.videos()), policies: this.withFallback('policies', [], this.api.policies()), teachers: this.withFallback('teachers', [], this.api.teachers()),
     }).subscribe({
       next: (result) => {
-        this.items.set(result.sessions); this.sections.set(result.sections); this.rooms.set(result.rooms);
+        this.items.set(result.sessions.items); this.total.set(result.sessions.total); this.sections.set(result.sections); this.rooms.set(result.rooms);
         this.cameras.set(result.cameras); this.videos.set(result.videos); this.policies.set(result.policies); this.teachers.set(result.teachers);
         this.loading.set(false);
       },
@@ -158,6 +185,12 @@ export class SessionsComponent implements OnInit {
     return this.items().filter((item) => (!query || String(item.id).includes(query) || this.sectionLabel(item.classSectionId).toLowerCase().includes(query)) && (!this.statusFilter || item.status === this.statusFilter));
   }
 
+  sourceLabel(session: Session): string {
+    if (session.videoId) return 'Video';
+    if (!session.cameraId) return 'Chưa chọn nguồn';
+    return this.cameras().find((camera) => camera.id === session.cameraId)?.sourceMode === 'BROWSER' ? 'Camera BROWSER' : 'Camera RTSP';
+  }
+  camerasForSession(session: Session): Camera[] { return this.cameras().filter((camera) => !session.roomId || camera.roomId === session.roomId); }
   readyVideos(): Video[] { return this.videos().filter((item) => item.status === 'READY' && item.videoType === 'INPUT_UPLOAD'); }
   loadErrorList(): Array<{key: string; label: string; message: string}> { const labels: Record<string, string> = { sessions: 'Buổi học', sections: 'Lớp học phần', rooms: 'Phòng học', cameras: 'Camera', videos: 'Video', policies: 'Chính sách điểm danh', teachers: 'Giảng viên' }; return Object.entries(this.loadErrors()).map(([key, message]) => ({ key, label: labels[key] ?? key, message })); }
   sectionLabel(id: number): string { const item = this.sections().find((section) => section.id === id); return item ? `${item.code} - ${item.name}` : `#${id}`; }
@@ -193,6 +226,25 @@ export class SessionsComponent implements OnInit {
     });
   }
 
+  editSource(session: Session): void {
+    this.sourceForm = { type: session.videoId ? 'video' : 'camera', cameraId: session.cameraId ?? null, videoId: session.videoId ?? null };
+    this.sourceError.set('');
+    this.sourceSession.set(session);
+  }
+  closeSource(): void { if (!this.sourceSaving()) this.sourceSession.set(null); }
+  saveSource(): void {
+    const session = this.sourceSession();
+    if (!session || (this.sourceForm.type === 'camera' ? !this.sourceForm.cameraId : !this.sourceForm.videoId)) {
+      this.sourceError.set('Vui lòng chọn một nguồn hợp lệ.');
+      return;
+    }
+    this.sourceSaving.set(true); this.sourceError.set('');
+    this.api.sessionSource(session.id, { cameraId: this.sourceForm.type === 'camera' ? this.sourceForm.cameraId : null, videoId: this.sourceForm.type === 'video' ? this.sourceForm.videoId : null }).subscribe({
+      next: () => { this.sourceSaving.set(false); this.sourceSession.set(null); this.message.set('Đã lưu nguồn phân tích. Buổi học chưa được tự động bắt đầu.'); this.reloadSessions(); },
+      error: (error) => { this.sourceSaving.set(false); this.sourceError.set(errorText(error)); },
+    });
+  }
+
   assignSubstitute(session: Session): void {
     this.substitutionSession.set(session); this.substitutionForm={teacherId:null,reason:'',note:''};this.substitutionError.set('');
   }
@@ -209,8 +261,9 @@ export class SessionsComponent implements OnInit {
     operation.subscribe({next:()=>{this.cancellationSaving.set(false);this.pendingCancellation.set(null);this.message.set(pending.type==='session'?'Đã hủy buổi học.':'Đã hủy phân công dạy thay.');this.reloadSessions()},error:error=>{this.cancellationSaving.set(false);this.cancellationError.set(errorText(error))}});
   }
 
-  private reloadSessions(): void {
-    this.api.sessions().subscribe({ next: (items) => this.items.set(items), error: (error) => this.error.set(errorText(error)) });
+  reloadSessions(): void {
+    this.loading.set(true);
+    this.api.sessionsPage({page:this.page,pageSize:this.pageSize,...(this.statusFilter?{status:this.statusFilter}:{})}).subscribe({ next: (result) => { this.items.set(result.items); this.total.set(result.total); this.loading.set(false); }, error: (error) => { this.error.set(errorText(error)); this.loading.set(false); } });
   }
 
   private emptyForm() {

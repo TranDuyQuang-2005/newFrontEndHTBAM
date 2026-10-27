@@ -55,7 +55,7 @@ async def capabilities():
     return CapabilitiesResponse(
         sessionInference=session_manager.ready,
         faceEnrollment=face_enrollment.ready,
-        annotatedVideoOutput=False,
+        annotatedVideoOutput=True,
         loadedModels=loaded_models(),
     )
 
@@ -97,7 +97,7 @@ async def upload_browser_chunk(job_id: str, file: UploadFile = File(...)):
     try:
         data = await file.read()
         suffix = Path(file.filename or "webcam.webm").suffix or ".webm"
-        return session_manager.enqueue_browser_chunk(job_id, data, suffix)
+        return session_manager.enqueue_browser_chunk(job_id, data, suffix, file.filename)
     except KeyError:
         raise HTTPException(status_code=404, detail="Job not found")
     except ValueError as exc:

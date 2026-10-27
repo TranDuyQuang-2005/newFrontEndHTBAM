@@ -6,7 +6,7 @@ echo ============================================================
 echo HTBAM - BUILD + RUN FULL WEB
 echo ============================================================
 
-docker compose -f infra\docker-compose.yml build ai backend web
+docker compose -f infra\docker-compose.yml build ai backend web migrate seed
 if errorlevel 1 goto :fail
 
 docker compose -f infra\docker-compose.yml up -d
@@ -30,9 +30,8 @@ echo AI       : http://127.0.0.1:8001
 echo MinIO    : http://127.0.0.1:9001
 echo SQL      : localhost:1433
 echo.
-echo Dev accounts:
-echo admin    / Admin@123456
-echo lecturer / Lecturer@123456
+echo Database migrations 001..013 were checked by the migrate service.
+echo Demo data is OFF unless Seed__Development=true is explicitly set in infra\.env.
 echo.
 
 start "" http://127.0.0.1:5173
@@ -42,6 +41,7 @@ goto :eof
 :fail
 echo.
 echo BUILD/RUN FAILED.
+echo docker compose -f infra\docker-compose.yml logs --tail=150 migrate seed
 echo docker compose -f infra\docker-compose.yml logs --tail=150 ai
 echo docker compose -f infra\docker-compose.yml logs --tail=150 backend
 exit /b 1

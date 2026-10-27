@@ -8,6 +8,23 @@ namespace HTBAM.Tests;
 public sealed class DevelopmentSeederTests
 {
     [Fact]
+    public async Task Restart_does_not_restore_revoked_management_position_or_overwrite_existing_teacher_profile()
+    {
+        await using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var faculty = new Faculty { Code = "F", Name = "Faculty" }; db.FacultiesSet.Add(faculty); await db.SaveChangesAsync();
+        db.DepartmentsSet.Add(new Department { Code = "BM-D", Name = "Department", FacultyId = faculty.Id }); await db.SaveChangesAsync();
+        await DevelopmentSeeder.SeedAsync(db);
+        var assignment = await db.ManagementAssignmentsSet.SingleAsync(x => x.PositionType == "FACULTY_HEAD");
+        assignment.IsActive = false; assignment.EffectiveTo = DateTime.UtcNow;
+        var teacher = await db.Teachers.SingleAsync(x => x.Id == assignment.TeacherId);
+        teacher.FullName = "Updated profile"; teacher.IsActive = false; await db.SaveChangesAsync();
+        await DevelopmentSeeder.SeedAsync(db);
+        Assert.False((await db.ManagementAssignmentsSet.SingleAsync(x => x.Id == assignment.Id)).IsActive);
+        Assert.Equal("Updated profile", (await db.Teachers.SingleAsync(x => x.Id == teacher.Id)).FullName);
+        Assert.False((await db.Teachers.SingleAsync(x => x.Id == teacher.Id)).IsActive);
+    }
+
+    [Fact]
     public async Task SeedAsync_RepairsDemoProfiles_AndRemainsIdempotent()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()

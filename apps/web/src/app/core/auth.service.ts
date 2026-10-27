@@ -47,9 +47,10 @@ export class AuthService {
   readonly canManageStructure = computed(
     () =>
       this.profileLoaded() &&
-      !this.isAdmin() &&
-      (this.user().managementAssignments?.length ?? 0) > 0,
+      (this.hasPermission('FACULTY_HEAD_ASSIGN') || (this.user().managementAssignments?.length ?? 0) > 0),
   );
+
+  readonly positionLabel = computed(() => this.user().positionLabel || (this.isAdmin() ? 'Quản trị viên' : 'Người dùng'));
 
   readonly canEditStudents = computed(
     () => this.user().permissions?.includes('STUDENT_EDIT_SCOPE') ?? false,
@@ -108,14 +109,14 @@ export class AuthService {
     );
   }
 
-  ensureProfile(): Observable<UserInfo> {
+  ensureProfile(force = false): Observable<UserInfo> {
     if (!this.tokenState()) {
       return throwError(
         () => new Error('AUTH_TOKEN_MISSING'),
       );
     }
 
-    if (this.profileLoaded()) {
+    if (this.profileLoaded() && !force) {
       return of(this.user() as UserInfo);
     }
 

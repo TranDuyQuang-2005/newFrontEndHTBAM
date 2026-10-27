@@ -1,3 +1,4 @@
+import { SearchSelectComponent } from '../shared/search-select.component';
 import {
   HttpErrorResponse,
 } from '@angular/common/http';
@@ -33,7 +34,7 @@ import {
 
 @Component({
   standalone: true,
-  imports: [
+  imports: [SearchSelectComponent,
     FormsModule,
     ReactiveFormsModule,
     RouterLink,
@@ -188,7 +189,7 @@ import {
                       '—'
                   }}
                 </td>
-                <td><code>{{ student.anonymousCode }}</code></td>
+                <td><code>{{ student.anonymousCode }}</code>@if(student.sourceAnonymousCode){<small>Mã nguồn: {{student.sourceAnonymousCode}}</small>}</td>
                 <td>
                   <span
                     class="badge"
@@ -348,32 +349,14 @@ import {
 
           <label>
             Lớp sinh hoạt
-            <select
-              formControlName="studentClassId"
-            >
-              <option [ngValue]="null">
-                -- Chọn --
-              </option>
-
-              @for (
-                studentClass of activeClasses();
-                track studentClass.id
-              ) {
-                <option
-                  [ngValue]="studentClass.id"
-                >
-                  {{ studentClass.code }}
-                  -
-                  {{ studentClass.name }}
-                </option>
-              }
-            </select>
+            <app-search-select resource="student-classes" label="Lớp sinh hoạt" formControlName="studentClassId" />
           </label>
 
           <label>
-            Mã ẩn danh *
+            Mã ẩn danh nội bộ
             <input
               formControlName="anonymousCode"
+              readonly placeholder="Tự động tạo khi lưu"
               (input)="clearStudentFieldError('anonymousCode')"
             />
 
@@ -578,10 +561,7 @@ export class StudentsComponent
       ),
 
     anonymousCode:
-      this.fb.nonNullable.control(
-        '',
-        Validators.required,
-      ),
+      this.fb.nonNullable.control(''),
 
     isActive:
       this.fb.nonNullable.control(true),

@@ -21,6 +21,13 @@ public sealed class AiClient(HttpClient http) : IAiClient
         return await res.Content.ReadFromJsonAsync<StopAiJobResponse>(cancellationToken: ct) ?? throw new InvalidOperationException("AI response empty");
     }
 
+    public async Task<StopAiJobResponse> GetJobAsync(string externalJobId, CancellationToken ct = default)
+    {
+        using var res = await http.GetAsync($"jobs/{Uri.EscapeDataString(externalJobId)}", ct);
+        res.EnsureSuccessStatusCode();
+        return await res.Content.ReadFromJsonAsync<StopAiJobResponse>(cancellationToken: ct) ?? throw new InvalidOperationException("AI job status response empty");
+    }
+
     public async Task<AiCapabilitiesResponse> CapabilitiesAsync(CancellationToken ct = default)
     {
         using var res = await http.GetAsync("capabilities", ct);

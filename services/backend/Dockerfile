@@ -1,7 +1,7 @@
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
 
-COPY src ./src
+COPY services/backend/src ./src
 
 RUN dotnet publish src/HTBAM.Api/HTBAM.Api.csproj \
     -c Release \
@@ -15,6 +15,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /out .
+COPY database/sqlserver /app/migrations
 
 EXPOSE 8080
 

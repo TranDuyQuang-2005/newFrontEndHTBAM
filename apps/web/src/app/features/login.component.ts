@@ -59,27 +59,33 @@ import { errorText } from '../shared/ui';
             @if (error()) { <div class="error-box" role="alert">{{ error() }}</div> }
 
             <label>
-              Tài khoản <span class="required">*</span>
-              <input formControlName="userName" autocomplete="username" placeholder="Nhập tên đăng nhập" />
+              <span>Tài khoản <span class="required" aria-hidden="true">*</span></span>
+              <input formControlName="userName" autocomplete="username" placeholder="Nhập tên đăng nhập" required
+                [attr.aria-invalid]="form.controls.userName.touched && form.controls.userName.invalid"
+                [attr.aria-describedby]="form.controls.userName.touched && form.controls.userName.invalid ? 'username-error' : null" />
               @if (form.controls.userName.touched && form.controls.userName.hasError('required')) {
-                <small class="field-error">Vui lòng nhập tài khoản.</small>
+                <small id="username-error" class="field-error">Vui lòng nhập tài khoản.</small>
               }
             </label>
 
-            <label class="password-field">
-              Mật khẩu <span class="required">*</span>
-              <input [type]="showPassword() ? 'text' : 'password'" formControlName="password" autocomplete="current-password" placeholder="Nhập mật khẩu" />
-              <button type="button" class="password-toggle" [attr.aria-label]="showPassword() ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'" (click)="showPassword.set(!showPassword())">
+            <div class="field">
+              <label for="login-password"><span>Mật khẩu <span class="required" aria-hidden="true">*</span></span></label>
+              <div class="password-field">
+              <input id="login-password" [type]="showPassword() ? 'text' : 'password'" formControlName="password" autocomplete="current-password" placeholder="Nhập mật khẩu" required
+                [attr.aria-invalid]="form.controls.password.touched && form.controls.password.invalid"
+                [attr.aria-describedby]="form.controls.password.touched && form.controls.password.invalid ? 'password-error' : null" />
+              <button type="button" class="password-toggle" aria-controls="login-password" [attr.aria-pressed]="showPassword()" [attr.aria-label]="showPassword() ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'" (click)="showPassword.set(!showPassword())">
                 @if (showPassword()) {
                   <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.9 17.9A10 10 0 0 1 12 20c-7 0-11-8-11-8a18 18 0 0 1 5.1-5.9M9.9 4.2A9 9 0 0 1 12 4c7 0 11 8 11 8a18 18 0 0 1-2.2 3.2M1 1l22 22"/></svg>
                 } @else {
                   <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
                 }
               </button>
+              </div>
               @if (form.controls.password.touched && form.controls.password.hasError('required')) {
-                <small class="field-error">Vui lòng nhập mật khẩu.</small>
+                <small id="password-error" class="field-error">Vui lòng nhập mật khẩu.</small>
               }
-            </label>
+            </div>
 
             <label class="check">
               <input type="checkbox" formControlName="remember" />

@@ -106,12 +106,6 @@ export const organizationGuard: CanActivateFn = () => {
 
   return auth.ensureProfile().pipe(
     map(() => {
-      if (auth.isAdmin()) {
-        return router.createUrlTree([
-          '/admin/users',
-        ]);
-      }
-
       return auth.canManageStructure()
         ? true
         : router.createUrlTree(['/']);
@@ -126,5 +120,44 @@ export const organizationGuard: CanActivateFn = () => {
         ]),
       );
     }),
+  );
+};
+
+function permissionGuard(permission: string): CanActivateFn {
+  return () => {
+    const auth = inject(AuthService);
+    const router = inject(Router);
+    if (!auth.isLoggedIn()) return router.createUrlTree(['/login']);
+    return auth.ensureProfile(true).pipe(
+      map(() => auth.hasPermission(permission) ? true : router.createUrlTree(auth.isAdmin() ? ['/admin/users'] : auth.hasPermission('CLASS_SECTION_VIEW') ? ['/class-sections'] : ['/system'])),
+      catchError(() => of(router.createUrlTree(['/login']))),
+    );
+  };
+}
+export const studentManagementGuard = permissionGuard('STUDENT_GLOBAL_VIEW');
+export const academicConfigurationGuard = permissionGuard('ACADEMIC_CONFIGURE');
+export const reportGuard = permissionGuard('REPORT_VIEW');
+export const catalogGuard: CanActivateFn = route => {
+  const auth = inject(AuthService); const router = inject(Router);
+  if (!auth.isLoggedIn()) return router.createUrlTree(['/login']);
+  return auth.ensureProfile(true).pipe(
+    map(() => {
+      const requested = route.queryParamMap.get('tab');
+      if (requested === 'class-sections') return auth.hasPermission('CLASS_SECTION_VIEW') ? true : router.createUrlTree(auth.hasPermission('CATALOG_VIEW') ? ['/management'] : ['/system']);
+      if (auth.hasPermission('CATALOG_VIEW')) return true;
+      return auth.hasPermission('CLASS_SECTION_VIEW') ? router.createUrlTree(['/management'], { queryParams: { tab: 'class-sections' } }) : router.createUrlTree(['/system']);
+    }),
+    catchError(() => of(router.createUrlTree(['/login']))),
+  );
+};
+
+export const classSectionsGuard: CanActivateFn = route => {
+  const auth = inject(AuthService); const router = inject(Router);
+  if (!auth.isLoggedIn()) return router.createUrlTree(['/login']);
+  return auth.ensureProfile(true).pipe(
+    map(() => auth.hasPermission('CLASS_SECTION_VIEW')
+      ? router.createUrlTree(['/management'], { queryParams: { ...route.queryParams, tab: 'class-sections' }, fragment: route.fragment ?? undefined })
+      : router.createUrlTree(auth.hasPermission('CATALOG_VIEW') ? ['/management'] : ['/system'])),
+    catchError(() => of(router.createUrlTree(['/login']))),
   );
 };

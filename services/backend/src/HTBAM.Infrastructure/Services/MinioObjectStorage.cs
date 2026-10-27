@@ -92,15 +92,31 @@ public sealed class MinioObjectStorage : IObjectStorage
     }
 
     public async Task<bool> ExistsAsync(string objectKey, CancellationToken ct = default)
+        => await StatAsync(objectKey, ct) is not null;
+
+    public async Task<ObjectStorageMetadata?> StatAsync(string objectKey, CancellationToken ct = default)
     {
         await EnsureReadyAsync(ct);
         try
         {
-            await _client.StatObjectAsync(new StatObjectArgs().WithBucket(_bucket).WithObject(objectKey), ct);
-            return true;
+            var stat = await _client.StatObjectAsync(new StatObjectArgs().WithBucket(_bucket).WithObject(objectKey), ct);
+            return new ObjectStorageMetadata(stat.Size, stat.ContentType);
         }
-        catch (Minio.Exceptions.ObjectNotFoundException) { return false; }
-        catch (Minio.Exceptions.BucketNotFoundException) { return false; }
+        catch (Minio.Exceptions.ObjectNotFoundException) { return null; }
+        catch (Minio.Exceptions.BucketNotFoundException) { return null; }
+    }
+
+    public async Task CopyRangeToAsync(string objectKey, long offset, long length, Stream destination, CancellationToken ct = default)
+    {
+        await EnsureReadyAsync(ct);
+        if (offset < 0) throw new ArgumentOutOfRangeException(nameof(offset));
+        if (length < 0) throw new ArgumentOutOfRangeException(nameof(length));
+        if (length == 0) return;
+        await _client.GetObjectAsync(new GetObjectArgs()
+            .WithBucket(_bucket)
+            .WithObject(objectKey)
+            .WithOffsetAndLength(offset, length)
+            .WithCallbackStream((source, callbackCt) => source.CopyToAsync(destination, callbackCt)), ct);
     }
 
     public async Task<bool> HealthAsync(CancellationToken ct = default)

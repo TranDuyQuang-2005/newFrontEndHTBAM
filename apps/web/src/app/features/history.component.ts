@@ -9,7 +9,7 @@ import { PageTitleComponent, behaviorText, errorText, fmtDate, statusText } from
   @if(error()){<div class="error-box">{{error()}}</div>}
   <section class="card table-card"><div class="table-wrap"><table><thead><tr><th>ID</th><th>Sinh viên / Identity</th><th>Loại / Trạng thái</th><th>Giá trị</th><th>Thời gian</th></tr></thead><tbody>
     @for(item of data();track item.id){<tr><td>#{{item.id}}</td><td>{{subject(item)}}</td><td><span class="badge blue">{{state(item)}}</span></td><td>{{value(item)}}</td><td>{{date(time(item))}}</td></tr>}
-    @empty{<tr><td colspan="5" class="empty">Nhập mã buổi học và chọn loại dữ liệu để tra cứu.</td></tr>}
+    @empty{<tr><td colspan="5" class="empty">{{emptyMessage()}}</td></tr>}
   </tbody></table></div></section>
 `})
 export class HistoryComponent{
@@ -19,4 +19,5 @@ export class HistoryComponent{
   state(item:any){const value=item.label||item.status||item.identityStatus||item.state;return item.label?behaviorText(value):statusText(value)}
   value(item:any){const n=item.probability??item.score??item.identityConfidence??item.observationQuality;return n==null?'—':`${Math.round(Number(n)*100)}%`}
   time(item:any){return item.startedAt||item.lastSeenAt||item.createdAt||item.updatedAt}
+  emptyMessage(){if(!this.sessionId)return'Nhập mã buổi học và chọn loại dữ liệu để tra cứu.';return this.kind==='behaviors'?'0 sự kiện — không ghi nhận hành vi trong buổi học này.':this.kind==='attendance'?'Không có bản ghi chuyên cần cho buổi học này.':'Không ghi nhận danh tính từ pipeline trong buổi học này.'}
 }

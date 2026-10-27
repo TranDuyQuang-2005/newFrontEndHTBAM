@@ -1,10 +1,39 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Alert, AttendancePolicy, Camera, Capabilities, ClassSection, Course, Department, Faculty, FaceEnrollment, Room, Session, Student, StudentClass, StudentStatusFilter, Teacher, Video, AdminUser, ManagementAssignment } from './models';
+import { Alert, AttendancePolicy, Camera, Capabilities, ClassSection, Course, Department, Faculty, FaceEnrollment, Room, Session, Student, StudentClass, StudentStatusFilter, Teacher, Video, AdminUser, ManagementAssignment, AcademicConfiguration, Paged } from './models';
 
 @Injectable({providedIn:'root'})
 export class ApiService {
   constructor(private http:HttpClient) {}
+  sectionImportSheets(file:File){const body=new FormData();body.append('file',file);return this.http.post<any>('/api/class-sections/import/sheets',body)}
+  inspectSectionImport(file:File,sheet:string,headerRow:number,headerRowCount:number){const body=new FormData();body.append('file',file);body.append('sheet',sheet);body.append('headerRow',String(headerRow));body.append('headerRowCount',String(headerRowCount));return this.http.post<any>('/api/class-sections/import/inspect',body)}
+  previewSectionImport(file:File,sheet:string,termId:number,policyId:number,phase:number|null,settings:any={}){const body=new FormData();body.append('file',file);body.append('sheet',sheet);body.append('academicTermId',String(termId));body.append('attendancePolicyId',String(policyId));body.append('settings',JSON.stringify(settings));if(phase)body.append('phase',String(phase));return this.http.post<any>('/api/class-sections/import/preview',body)}
+  sectionImportPage(token:string,page:number,pageSize:number,q:string,status:string){return this.http.get<any>(`/api/class-sections/import/preview/${encodeURIComponent(token)}`,{params:{page,pageSize,q,status}})}
+  sectionImportTemplate(){return this.http.get('/api/class-sections/import/template',{responseType:'blob'})}
+  sectionImportResultFile(token:string){return this.http.get(`/api/class-sections/import/result/${encodeURIComponent(token)}/download`,{responseType:'blob'})}
+  sectionImportValidationFile(token:string){return this.http.get(`/api/class-sections/import/preview/${encodeURIComponent(token)}/download`,{responseType:'blob'})}
+  confirmSectionImport(token:string){return this.http.post<any>('/api/class-sections/import/confirm',{token})}
+  academicConfiguration(){return this.http.get<AcademicConfiguration>('/api/academic-configuration')}
+  saveWeekOne(id:number,body:any){return this.http.put(`/api/academic-configuration/terms/${id}/week-one`,body)}
+  academicRange(termId:number,credits:number,phase:number|null){return this.http.get<{startsOn:string;endsOn:string}>(`/api/academic-configuration/terms/${termId}/range`,{params:{credits,...(phase==null?{}:{phase})}})}
+  saveAcademicTerm(id:number|null,body:any){return id?this.http.put(`/api/academic-configuration/terms/${id}`,body):this.http.post('/api/academic-configuration/terms',body)}
+  saveBellVersion(body:any){return this.http.post('/api/academic-configuration/bell-versions',body)}
+  saveScheduleException(body:any){return this.http.post('/api/academic-configuration/exceptions',body)}
+  saveWeekCalendar(body:any){return this.http.post('/api/academic-configuration/week-calendars',body)}
+  sectionsPage(params:Record<string,string|number>){return this.http.get<Paged<any>>('/api/class-sections',{params})}
+  sectionDetail(id:number){return this.http.get<any>(`/api/class-sections/${id}`)}
+  previewSection(id:number|null,body:any){return this.http.post<any>(id?`/api/class-sections/${id}/preview`:'/api/class-sections/preview',body)}
+  saveSection(id:number|null,body:any){return id?this.http.put<any>(`/api/class-sections/${id}`,body):this.http.post<any>('/api/class-sections',body)}
+  deactivateSection(id:number){return this.http.delete(`/api/class-sections/${id}`)}
+  sectionGrants(id:number){return this.http.get<any[]>(`/api/class-sections/${id}/grants`)}
+  setSectionGrant(id:number,teacherId:number,body:any){return this.http.put(`/api/class-sections/${id}/grants/${teacherId}`,body)}
+  sectionStudents(id:number){return this.http.get<any[]>(`/api/class-sections/${id}/students`)}
+  setSectionStudents(id:number,studentIds:number[]){return this.http.put(`/api/class-sections/${id}/students`,{studentIds})}
+  setClassStudentNote(id:number,studentId:number,note:string){return this.http.put(`/api/class-sections/${id}/students/${studentId}/note`,{note})}
+  sessionsPage(params:Record<string,string|number>){return this.http.get<Paged<any>>('/api/sessions',{params})}
+  sessionSource(id:number,body:{cameraId:number|null;videoId:number|null}){return this.http.put(`/api/sessions/${id}/source`,body)}
+  vacantDepartments(){return this.http.get<any[]>('/api/management-assignments/vacant-departments')}
+  updateHeadProfile(id:number,body:any){return this.http.put(`/api/management-assignments/${id}/teacher`,body)}
   students(q='',status:StudentStatusFilter='all'){
     let params=new HttpParams().set('q',q).set('status',status).set('includeInactive',String(status!=='active'));
     return this.http.get<Student[]>('/api/students',{params});
@@ -24,6 +53,8 @@ export class ApiService {
   rooms(){return this.http.get<Room[]>('/api/catalogs/rooms')}
   cameras(){return this.http.get<Camera[]>('/api/catalogs/cameras')}
   saveCatalog(resource:string,id:number|null,body:any){return id?this.http.put(`/api/catalogs/${resource}/${id}`,body):this.http.post(`/api/catalogs/${resource}`,body)}
+  nextCourseCode(departmentId:number){return this.http.get<{code:string}>(`/api/catalogs/courses/next-code`,{params:{departmentId}});}
+  nextTeacherCode(departmentId:number){return this.http.get<{code:string}>(`/api/catalogs/teachers/next-code`,{params:{departmentId}});}
   deactivateCatalog(resource:string,id:number){return this.http.delete(`/api/catalogs/${resource}/${id}`)}
   reactivateCatalog(resource:string,id:number){return this.http.post(`/api/catalogs/${resource}/${id}/reactivate`,{})}
   testCamera(id:number){return this.http.post<any>(`/api/catalogs/cameras/${id}/test`,{})}
@@ -32,7 +63,7 @@ export class ApiService {
 
   videos(){return this.http.get<Video[]>('/api/videos')}
   uploadVideo(file:File){const f=new FormData();f.append('file',file);return this.http.post<Video>('/api/videos',f)}
-  previewVideo(id:number){return this.http.get<{url:string;contentType:string;fileName:string}>(`/api/videos/${id}/preview-url`)}
+  previewVideo(id:number){return this.http.get<{url:string;contentType:string;fileName:string;contentLength:number;expiresInSeconds:number}>(`/api/videos/${id}/preview-url`)}
   deleteVideo(id:number){return this.http.delete(`/api/videos/${id}`)}
 
   sessions(query=''){return this.http.get<Session[]>(`/api/sessions${query?'?'+query:''}`)}
@@ -71,6 +102,7 @@ export class ApiService {
   revokeManagementAssignment(id:number){return this.http.delete(`/api/management-assignments/${id}`)}
   historySession(id:number,kind:'behaviors'|'attendance'|'identities'){return this.http.get<any[]>(`/api/history/sessions/${id}/${kind}`)}
   report(kind:'sessions'|'students'|'class-sections',id:number){return this.http.get<any>(`/api/reports/${kind}/${id}`)}
+  reportOptions(kind:'sessions'|'students'|'class-sections'){return this.http.get<Array<{id:number;label:string;status?:string;scheduledStart?:string}>>('/api/reports/options',{params:{kind}})}
   exportReport(kind:'sessions'|'students'|'class-sections',id:number,format:'pdf'|'excel'){return this.http.get(`/api/reports/${kind}/${id}/${format}`,{responseType:'blob'})}
 
   faceList(studentId:number){return this.http.get<FaceEnrollment[]>(`/api/students/${studentId}/face-enrollments`)}

@@ -35,8 +35,39 @@ public sealed class AlertsController(AppDbContext db, IAuditService audit) : Con
         if (!string.IsNullOrWhiteSpace(type)) query = query.Where(x => x.Type == type.Trim().ToUpperInvariant());
         if (from is not null) query = query.Where(x => x.StartedAt >= from);
         if (to is not null) query = query.Where(x => x.StartedAt < to);
-        return Ok(await query.OrderByDescending(x => x.CreatedAt).Take(2000).ToListAsync(ct));
+        var rows = await query.OrderByDescending(x => x.CreatedAt).Take(2000).ToListAsync(ct);
+        var possibleBehaviorIds = rows.Select(x => ParentEventId(x.ExternalEventId)).Where(x => x is not null).Cast<string>().Distinct().ToArray();
+        var behaviorIds = possibleBehaviorIds.Length == 0
+            ? new HashSet<string>(StringComparer.Ordinal)
+            : (await db.BehaviorEventsSet.AsNoTracking().Where(x => possibleBehaviorIds.Contains(x.ExternalEventId)).Select(x => x.ExternalEventId).ToListAsync(ct)).ToHashSet(StringComparer.Ordinal);
+        var stableIds = rows.Select(x => x.StableIdentityId).Distinct().ToArray();
+        var trackIds = await db.StableIdentitiesSet.AsNoTracking().Where(x => stableIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.CurrentTrackId, ct);
+        return Ok(rows.Select(x =>
+        {
+            var parent = ParentEventId(x.ExternalEventId);
+            var behaviorEventId = parent is not null && behaviorIds.Contains(parent) ? parent : null;
+            return new
+            {
+                x.Id, x.ExternalEventId, x.SessionId, x.StableIdentityId, x.StudentId, x.Type,
+                Severity = Severity(x.Type, x.Confidence),
+                Source = behaviorEventId is null ? "AI_DIRECT" : "RULE_ENGINE",
+                BehaviorEventId = behaviorEventId,
+                TrackId = trackIds.GetValueOrDefault(x.StableIdentityId),
+                x.StartedAt, x.EndedAt, x.DurationSeconds, x.Confidence, x.ObservationQuality,
+                x.Status, x.LecturerNote, x.EvidenceRef, x.CreatedAt, x.AcknowledgedAt, x.ClosedAt
+            };
+        }));
     }
+
+    private static string? ParentEventId(string externalEventId)
+    {
+        var split = externalEventId.LastIndexOf(':');
+        return split <= 0 ? null : externalEventId[..split];
+    }
+
+    private static string Severity(string type, decimal confidence) =>
+        type.Contains("SLEEP", StringComparison.OrdinalIgnoreCase) || confidence >= .9m ? "CRITICAL" :
+        confidence >= .65m ? "WARNING" : "INFO";
 
     public record NoteReq(string? Note);
 

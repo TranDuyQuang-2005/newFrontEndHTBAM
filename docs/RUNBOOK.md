@@ -1,65 +1,87 @@
-# Runbook - HTBAM v3-complete
+# Runbook HTBAM
 
-## A. Lần chạy đầu trên máy của bạn
+## Khởi động trên Windows bằng Docker
 
-### 1. SQL Server
-Tạo database trống `HTBAM`, sau đó chạy **đúng thứ tự**:
+Từ thư mục gốc repository:
+
+```powershell
+Copy-Item infra/.env.example infra/.env   # chỉ khi chưa có .env; không ghi đè file hiện có
+docker volume inspect infra_htbam-sql
+docker compose -f infra/docker-compose.yml config --quiet
+docker compose -f infra/docker-compose.yml build ai backend web migrate seed
+docker compose -f infra/docker-compose.yml up -d
+docker compose -f infra/docker-compose.yml ps -a
+```
+
+Có thể dùng `RUN_HTBAM_FULL_WEB.bat` cho cùng quy trình. Không cần và không nên dùng `--no-cache` cho AI khi chỉ cập nhật học vụ.
+
+Volume SQL `infra_htbam-sql` là volume ngoài (external) để giữ database hiện có. Không chạy `docker compose down -v`, không xóa volume và không đổi `MSSQL_SA_PASSWORD` nếu volume đang dùng mật khẩu cũ.
+
+Thứ tự tự động là: SQL healthy → `migrate` hoàn tất → `seed` hoàn tất → backend healthy → web. Runner áp dụng tuần tự migration `database/sqlserver/001..013`, lưu checksum trong `SchemaMigrations`, rollback migration lỗi và từ chối nội dung đã bị sửa sau khi áp dụng. Database cũ chưa có bảng lịch sử chỉ được nhận baseline 001 khi toàn bộ bảng baseline đã hiện diện; schema dở dang sẽ dừng với lỗi thay vì tự ghi nhận.
+
+Development seed mặc định tắt. Chỉ bật rõ ràng trong môi trường Development:
+
 ```text
-database/001_schema.sql
-database/002_seed.sql
-database/003_dev_sample.sql   # tùy chọn, nên chạy khi test
+ASPNETCORE_ENVIRONMENT=Development
+Seed__Development=true
+SEED_DEFAULT_PASSWORD=<mật khẩu dành cho tài khoản demo mới>
 ```
-Không chạy `database/legacy/004_upgrade_v1_to_v2.sql` vì bạn chưa có DB v1/v2.
 
-### 2. MinIO
-Có thể dùng Docker Compose hoặc MinIO local. Cấu hình endpoint/access key/secret/bucket phải khớp `appsettings.json`/environment.
-Bucket `htbam-private` được backend tạo nếu `ObjectStorage:EnsureBucketOnStartup=true` và giữ private.
+Seed không reset tài khoản, mật khẩu hoặc dữ liệu nghiệp vụ đã có. Tắt seed không xóa dữ liệu demo đã tạo.
 
-### 3. AI contract service
-```bash
-cd services/ai
-python -m venv .venv
-# Windows:
-.venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8001
+## Chạy migration/seed riêng
+
+Từ thư mục gốc:
+
+```powershell
+docker compose -f infra/docker-compose.yml run --rm --no-deps migrate
+docker compose -f infra/docker-compose.yml run --rm --no-deps seed
+docker compose -f infra/docker-compose.yml logs --tail=200 migrate seed backend
 ```
-AI hiện ở contract-only, model capabilities = false.
 
-### 4. Backend
-Yêu cầu .NET 9 SDK:
-```bash
-cd services/backend/src
-dotnet restore
-dotnet build HTBAM.Api/HTBAM.Api.csproj
-dotnet run --project HTBAM.Api
+Ngoài Docker, đặt connection string rồi chạy từ project API:
+
+```powershell
+dotnet run --project services/backend/src/HTBAM.Api -- --migrate
+dotnet run --project services/backend/src/HTBAM.Api -- --seed
+dotnet run --project services/backend/src/HTBAM.Api
 ```
-Fresh DB đã được tạo bằng SQL script nên `Database:EnsureCreated=false` là đúng.
 
-### 5. Web
-```bash
-cd apps/web
-npm install
-npm run build
-npm run dev
+`database/sqlserver` là nguồn migration chuẩn. Kiểm tra bản mirror ở `database/`:
+
+```powershell
+node database/sync-sqlserver.cjs --check
 ```
-Vite development proxy mặc định gọi backend tại `http://localhost:5000`.
 
-### 6. Login demo
-- admin / Admin@123456
-- lecturer / Lecturer@123456
+Không sửa migration đã áp dụng; mọi thay đổi schema tiếp theo phải là migration tiến tới mới.
 
-## B. Luồng test không cần model
-1. Login admin.
-2. Quản lý Khoa/Bộ môn/Lớp/Môn/GV/Phòng/Camera.
-3. Tạo/import sinh viên.
-4. Thiết lập roster lớp học phần.
-5. Upload video hoặc khai báo/test camera.
-6. Tạo Face Enrollment, upload đủ ảnh FRONT/LEFT/RIGHT; submit -> `PENDING_AI`.
-7. Tạo Session, chọn đúng một nguồn Camera hoặc Video, chọn attendance policy.
-8. Kiểm tra dashboard/capability: AI model phải hiển thị chưa sẵn sàng.
-9. Start Session phải bị chặn với thông báo model inference chưa tích hợp — đây là hành vi đúng ở giai đoạn hiện tại.
-10. Kiểm tra history/report/search/export trên dữ liệu đã có hoặc sau khi AI production được nối.
+## Kiểm tra sau khởi động
 
-## C. Sau khi model train xong
-Thay contract-only engine trong `services/ai` bằng production adapters theo `docs/MODEL_INTEGRATION.md`. Không thay schema chính/API Web.
+```powershell
+curl.exe http://localhost:8001/health
+curl.exe http://localhost:8001/capabilities
+curl.exe http://localhost:5000/health
+```
+
+- Web: `http://127.0.0.1:5173`
+- Backend: `http://127.0.0.1:5000`
+- AI: `http://127.0.0.1:8001`
+- MinIO console: `http://127.0.0.1:9001`
+- SQL Server: `localhost:1433`
+
+Kiểm thử thủ công tối thiểu: đăng nhập theo từng vai trò; cấu hình học kỳ/bảng giờ/mốc tuần; tạo hoặc import lớp và xem preview; lưu lịch để sinh buổi; chọn đúng một nguồn video, camera RTSP hoặc camera BROWSER; chạy start/stop/finalize; kiểm tra dashboard, overlay/chunk; và xác nhận đăng ký khuôn mặt vẫn tạo/upload/preview/xóa/hủy/xử lý template được.
+
+## Build và test cục bộ
+
+```powershell
+dotnet build services/backend/src/HTBAM.Api/HTBAM.Api.csproj --configuration Release
+dotnet test services/backend/tests/HTBAM.Tests/HTBAM.Tests.csproj
+Push-Location apps/web
+npm.cmd test
+npm.cmd run build
+Pop-Location
+```
+
+Các SQL integration test cần `HTBAM_TEST_SQL_CONNECTION` trỏ đến SQL Server dùng cho kiểm thử và tự tạo/xóa database cách ly. Không trỏ biến này vào database thật. Test workbook HUIT đầy đủ chỉ chạy khi đặt `HTBAM_HUIT_WORKBOOK` tới file nguồn thật.
+
+Xem thêm [cơ chế migration và development seed](DATABASE_MIGRATION_AND_DEVELOPMENT_SEED.md) và [triển khai lịch học](ACADEMIC_SCHEDULING_IMPLEMENTATION.md).

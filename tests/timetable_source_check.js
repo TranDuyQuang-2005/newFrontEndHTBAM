@@ -1,0 +1,14 @@
+const assert=require('node:assert/strict');
+const source=require('./fixtures/huit-timetable-reference.json');
+const examples=source.examples;
+const accountant=examples.filter(x=>x.sourceCode==='010110215301');
+assert.equal(accountant.length,2);
+assert.deepEqual(accountant.map(x=>x.activityType),['LT','TH']);
+assert.deepEqual(accountant.map(x=>x.sourceDay),[4,6]);
+assert.equal(accountant[0].room,'Zoom48');assert.match(accountant[1].room,/B308/);
+const safety=examples.filter(x=>x.sourceCode==='010100000501');assert.equal(safety.length,2);assert.match(safety[0].room,/B407/);assert.equal(safety[1].room,'Zoom39');
+assert.notEqual(safety[0].startsOn,safety[1].startsOn);assert.deepEqual(safety.map(x=>x.totalPeriods),[6,24]);assert.equal(safety[0].nominalPeriods,30);
+assert.ok(examples.some(x=>x.sourceCode.length===13&&x.sourceCode.startsWith('0')));
+assert.equal(source.audit.dataRows,10190);assert.equal(source.audit.uniqueSourceCodes,5447);assert.equal(source.audit.sundays,801);assert.equal(source.audit.sundayMatches,801);assert.equal(source.audit.candidateWeekAnchors.length,3);
+assert.equal(source.officialSemesterDatesConfirmed,false);assert.equal(source.officialWeekCalendarsConfirmed,false);
+console.log('HUIT_SOURCE_REFERENCE_OK (leading zeros, 12/13-character IDs, grouped LT/TH, room changes, separate period totals, multiple week anchors)');

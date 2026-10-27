@@ -1,10 +1,12 @@
 using System.Security.Cryptography;
+using System.Text;
 using HTBAM.Api.Support;
 using HTBAM.Application.Interfaces;
 using HTBAM.Domain.Entities;
 using HTBAM.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 
 namespace HTBAM.Api.Controllers;
@@ -81,16 +83,66 @@ public sealed class VideosController(AppDbContext db, IObjectStorage storage, IA
         if (string.IsNullOrWhiteSpace(video.StorageRef)) return NotFound(new { message = "Video không có tệp trong kho lưu trữ." });
         try
         {
-            if (!await storage.ExistsAsync(video.StorageRef, ct))
+            var metadata = await storage.StatAsync(video.StorageRef, ct);
+            if (metadata is null)
                 return NotFound(new { message = $"Tệp '{video.FileName}' không còn tồn tại trong kho lưu trữ." });
-            var url = await storage.GetReadUrlAsync(video.StorageRef, 900, ct);
-            return Ok(new { url, video.ContentType, video.FileName, expiresInSeconds = 900 });
+            var expiresInSeconds = 900;
+            var token = CreateStreamToken(id, UserContext.Id(User), expiresInSeconds);
+            var url = $"/api/videos/{id}/stream?token={Uri.EscapeDataString(token)}";
+            return Ok(new { url, video.ContentType, video.FileName, contentLength = metadata.SizeBytes, expiresInSeconds });
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Cannot create preview URL for video {VideoId}", id);
             return StatusCode(StatusCodes.Status503ServiceUnavailable, new { message = "Không thể truy cập kho video lúc này. Vui lòng thử lại sau." });
         }
+    }
+
+    [AllowAnonymous]
+    [HttpGet("{id:long}/stream")]
+    [HttpHead("{id:long}/stream")]
+    public async Task<ActionResult> Stream(long id, [FromQuery] string? token, CancellationToken ct)
+    {
+        if (!ValidateStreamToken(token, id))
+            return Unauthorized(new { message = "Liên kết phát video không hợp lệ hoặc đã hết hạn." });
+
+        var video = await db.VideosSet.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && x.Status != "DELETED", ct);
+        if (video is null) return NotFound(new { message = "Video không tồn tại." });
+        if (video.Status != "READY") return Conflict(new { message = "Video chưa sẵn sàng để phát." });
+        if (string.IsNullOrWhiteSpace(video.StorageRef)) return NotFound(new { message = "Video không có tệp trong kho lưu trữ." });
+
+        ObjectStorageMetadata? metadata;
+        try
+        {
+            metadata = await storage.StatAsync(video.StorageRef, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Cannot stat video object {VideoId}", id);
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new { message = "Không thể truy cập kho video lúc này. Vui lòng thử lại sau." });
+        }
+        if (metadata is null)
+            return NotFound(new { message = $"Tệp '{video.FileName}' không còn tồn tại trong kho lưu trữ." });
+
+        if (!TryResolveRange(Request.Headers.Range.ToString(), metadata.SizeBytes, out var offset, out var length, out var partial))
+        {
+            Response.Headers.AcceptRanges = "bytes";
+            Response.Headers.ContentRange = $"bytes */{metadata.SizeBytes}";
+            return StatusCode(StatusCodes.Status416RangeNotSatisfiable);
+        }
+
+        Response.StatusCode = partial ? StatusCodes.Status206PartialContent : StatusCodes.Status200OK;
+        Response.ContentType = string.IsNullOrWhiteSpace(video.ContentType)
+            ? metadata.ContentType ?? "application/octet-stream"
+            : video.ContentType;
+        Response.ContentLength = length;
+        Response.Headers.AcceptRanges = "bytes";
+        Response.Headers.CacheControl = "private, no-store";
+        if (partial) Response.Headers.ContentRange = $"bytes {offset}-{offset + length - 1}/{metadata.SizeBytes}";
+
+        if (!HttpMethods.IsHead(Request.Method) && length > 0)
+            await storage.CopyRangeToAsync(video.StorageRef, offset, length, Response.Body, ct);
+        return new EmptyResult();
     }
 
     [HttpDelete("{id:long}")]
@@ -107,5 +159,74 @@ public sealed class VideosController(AppDbContext db, IObjectStorage storage, IA
         video.Status = "DELETED"; await db.SaveChangesAsync(ct);
         await audit.WriteAsync(UserContext.Id(User), "VIDEO_DELETE", "Video", id.ToString(), new { video.FileName }, ct);
         return NoContent();
+    }
+
+    private string CreateStreamToken(long videoId, long? userId, int expiresInSeconds)
+    {
+        var expiresAt = DateTimeOffset.UtcNow.AddSeconds(expiresInSeconds).ToUnixTimeSeconds();
+        var nonce = WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(16));
+        var payload = $"{videoId}:{expiresAt}:{userId ?? 0}:{nonce}";
+        var payloadBytes = Encoding.UTF8.GetBytes(payload);
+        using var hmac = new HMACSHA256(StreamSigningKey());
+        var signature = hmac.ComputeHash(Encoding.UTF8.GetBytes("htbam-video-stream:" + payload));
+        return $"{WebEncoders.Base64UrlEncode(payloadBytes)}.{WebEncoders.Base64UrlEncode(signature)}";
+    }
+
+    private bool ValidateStreamToken(string? token, long videoId)
+    {
+        if (string.IsNullOrWhiteSpace(token)) return false;
+        var parts = token.Split('.', 2);
+        if (parts.Length != 2) return false;
+        try
+        {
+            var payloadBytes = WebEncoders.Base64UrlDecode(parts[0]);
+            var payload = Encoding.UTF8.GetString(payloadBytes);
+            var values = payload.Split(':', 4);
+            if (values.Length != 4 || !long.TryParse(values[0], out var tokenVideoId) || tokenVideoId != videoId ||
+                !long.TryParse(values[1], out var expiresAt) || DateTimeOffset.UtcNow.ToUnixTimeSeconds() > expiresAt)
+                return false;
+            using var hmac = new HMACSHA256(StreamSigningKey());
+            var expected = hmac.ComputeHash(Encoding.UTF8.GetBytes("htbam-video-stream:" + payload));
+            var supplied = WebEncoders.Base64UrlDecode(parts[1]);
+            return supplied.Length == expected.Length && CryptographicOperations.FixedTimeEquals(supplied, expected);
+        }
+        catch (FormatException) { return false; }
+        catch (InvalidOperationException) { return false; }
+    }
+
+    private byte[] StreamSigningKey()
+    {
+        var secret = cfg["VideoPlayback:SigningKey"] ?? cfg["Jwt:Secret"];
+        if (string.IsNullOrWhiteSpace(secret) || Encoding.UTF8.GetByteCount(secret) < 32)
+            throw new InvalidOperationException("VideoPlayback signing key missing or shorter than 32 bytes.");
+        return Encoding.UTF8.GetBytes(secret);
+    }
+
+    private static bool TryResolveRange(string? value, long size, out long offset, out long length, out bool partial)
+    {
+        offset = 0;
+        length = size;
+        partial = false;
+        if (string.IsNullOrWhiteSpace(value)) return true;
+        if (size <= 0 || !value.StartsWith("bytes=", StringComparison.OrdinalIgnoreCase) || value.Contains(',')) return false;
+        var pair = value[6..].Split('-', 2);
+        if (pair.Length != 2) return false;
+
+        if (string.IsNullOrWhiteSpace(pair[0]))
+        {
+            if (!long.TryParse(pair[1], out var suffixLength) || suffixLength <= 0) return false;
+            length = Math.Min(suffixLength, size);
+            offset = size - length;
+        }
+        else
+        {
+            if (!long.TryParse(pair[0], out offset) || offset < 0 || offset >= size) return false;
+            var end = size - 1;
+            if (!string.IsNullOrWhiteSpace(pair[1]) && (!long.TryParse(pair[1], out end) || end < offset)) return false;
+            end = Math.Min(end, size - 1);
+            length = end - offset + 1;
+        }
+        partial = true;
+        return true;
     }
 }

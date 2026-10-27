@@ -4,6 +4,8 @@ from pydantic import BaseModel, Field, HttpUrl
 
 class RosterCandidate(BaseModel):
     studentId: int
+    studentCode: str | None = None
+    fullName: str | None = None
     templateReadUrl: str
     templateVersion: str
     modelName: str
@@ -36,6 +38,7 @@ class StopJobResponse(BaseModel):
     jobId: str
     status: str
     artifact: "ArtifactMetadata | None" = None
+    error: str | None = None
 
 class ArtifactMetadata(BaseModel):
     objectKey: str

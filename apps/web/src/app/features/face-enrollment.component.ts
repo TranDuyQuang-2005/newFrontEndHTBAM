@@ -100,7 +100,7 @@ import { BackButtonComponent, ModalComponent, errorText, statusText } from '../s
               <article class="panel" style="overflow:hidden;min-width:0">
                 <button type="button" class="secondary" style="width:100%;min-height:105px;border-radius:0" (click)="openPreview(image)">Xem ảnh</button>
                 <div style="padding:10px;min-width:0">
-                  <strong style="display:block;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{image.originalFileName}}</strong>
+<strong [title]="image.originalFileName" style="display:block;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{image.originalFileName}}</strong>
                   <small style="display:block;margin-top:4px;color:#64748b">{{poseLabel(image.capturePose)}} · {{statusLabel(image.qualityStatus)}}</small>
                   @if(image.qualityScore!=null){<small style="display:block;color:#64748b">Chất lượng: {{percent(image.qualityScore)}}</small>}
                   @if(image.qualityReason){<small class="field-error" style="display:block;margin-top:4px">{{image.qualityReason}}</small>}

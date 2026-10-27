@@ -15,27 +15,27 @@ import { ModalComponent, PageTitleComponent, RowActionMenuComponent, behaviorTex
 
     <div class="filter-bar">
       <label>Buổi học<input type="number" [(ngModel)]="sessionId" placeholder="Mã buổi học" /></label>
-      <label>Trạng thái<select [(ngModel)]="status"><option value="">Tất cả</option><option value="OPEN">Đang mở</option><option value="ACKNOWLEDGED">Đã xác nhận</option><option value="CLOSED">Đã đóng</option></select></label>
+      <label>Trạng thái<select [(ngModel)]="status"><option value="">Tất cả</option><option value="OPEN">Đang mở</option><option value="ACK">Đã xác nhận</option><option value="CLOSED">Đã đóng</option></select></label>
       <button type="button" (click)="load()">Tìm kiếm</button>
       <button type="button" class="secondary" (click)="clearFilters()">Xóa lọc</button>
     </div>
 
     <section class="card table-card">
       <div class="table-wrap"><table>
-        <thead><tr><th>Mức độ</th><th>Buổi học</th><th>Loại cảnh báo</th><th>Độ tin cậy</th><th>Chất lượng quan sát</th><th>Thời gian</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+        <thead><tr><th>Mức độ</th><th>Buổi học</th><th>Loại cảnh báo</th><th>Nguồn</th><th>Liên kết</th><th>Độ tin cậy</th><th>Chất lượng quan sát</th><th>Thời gian</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
         <tbody>
           @for (alert of items(); track alert.id) {
             <tr>
               <td><span class="badge" [class.danger]="severity(alert) === 'Critical'" [class.warning]="severity(alert) === 'Warning'" [class.blue]="severity(alert) === 'Info'">{{ severityLabel(alert) }}</span></td>
-              <td class="cell-title">#{{ alert.sessionId }}</td><td>{{ behaviorLabel(alert.type) }}</td><td>{{ percent(alert.confidence) }}</td><td>{{ percent(alert.observationQuality) }}</td><td>{{ date(alert.createdAt) }}</td>
-              <td><span class="badge" [class.gray]="alert.status === 'CLOSED'" [class.blue]="alert.status === 'ACKNOWLEDGED'">{{ statusLabel(alert.status) }}</span></td>
+              <td class="cell-title">#{{ alert.sessionId }}</td><td>{{ behaviorLabel(alert.type) }}</td><td>{{ alert.source === 'RULE_ENGINE' ? 'Luật từ hành vi' : 'AI trực tiếp' }}</td><td>{{ alert.studentId ? 'SV #' + alert.studentId : alert.stableIdentityId ? 'Identity #' + alert.stableIdentityId : '—' }}<small>{{ alert.trackId ? 'Track ' + alert.trackId : alert.behaviorEventId ? 'Event ' + alert.behaviorEventId : '' }}</small></td><td>{{ percent(alert.confidence) }}</td><td>{{ percent(alert.observationQuality) }}</td><td>{{ date(alert.startedAt) }}</td>
+              <td><span class="badge" [class.gray]="alert.status === 'CLOSED'" [class.blue]="alert.status === 'ACK'">{{ statusLabel(alert.status) }}</span></td>
               <td class="menu-cell"><app-row-action-menu>
                 @if (alert.status === 'OPEN') { <button type="button" class="small" (click)="openAction(alert, 'ack')">Xác nhận</button> }
                 @if (alert.status !== 'CLOSED') { <button type="button" class="danger" (click)="openAction(alert, 'close')">Đóng</button> }
                 @else { <button type="button" class="secondary small" (click)="openAction(alert, 'reopen')">Mở lại</button> }
               </app-row-action-menu></td>
             </tr>
-          } @empty { <tr><td colspan="8" class="empty">Không có cảnh báo phù hợp.</td></tr> }
+          } @empty { <tr><td colspan="10" class="empty">0 cảnh báo — không có rule/model nào phát hiện cảnh báo phù hợp.</td></tr> }
         </tbody>
       </table></div>
     </section>
@@ -65,7 +65,7 @@ export class AlertsComponent implements OnInit {
   closeAction(): void { if (!this.saving()) this.selectedAlert.set(null); }
   confirmAction(): void { const alert = this.selectedAlert(); if (!alert) return; this.saving.set(true); this.api.alertAction(alert.id, this.selectedAction(), this.note.trim()).subscribe({ next: () => { this.saving.set(false); this.selectedAlert.set(null); this.message.set('Đã cập nhật cảnh báo.'); this.load(); }, error: (error) => { this.error.set(errorText(error)); this.saving.set(false); } }); }
   percent(value: number): string { return `${Math.round(value * 100)}%`; }
-  severity(alert: Alert): 'Critical' | 'Warning' | 'Info' { if (alert.type.toUpperCase().includes('SLEEP') || alert.confidence >= .9) return 'Critical'; if (alert.confidence >= .65) return 'Warning'; return 'Info'; }
+  severity(alert: Alert): 'Critical' | 'Warning' | 'Info' { if (alert.severity === 'CRITICAL') return 'Critical'; if (alert.severity === 'WARNING') return 'Warning'; if (alert.severity === 'INFO') return 'Info'; if (alert.type.toUpperCase().includes('SLEEP') || alert.confidence >= .9) return 'Critical'; if (alert.confidence >= .65) return 'Warning'; return 'Info'; }
   severityLabel(alert: Alert): string { return ({ Critical: 'Nghiêm trọng', Warning: 'Cảnh báo', Info: 'Thông tin' } as Record<string,string>)[this.severity(alert)]; }
   statusLabel(status: string): string { return statusText(status); }
   behaviorLabel(value: string): string { return behaviorText(value); }

@@ -8,7 +8,7 @@ echo ============================================================
 echo IMPORTANT: Docker cache is used. --no-cache is NOT used.
 echo.
 
-docker compose -f infra\docker-compose.yml build ai backend web
+docker compose -f infra\docker-compose.yml build ai backend web migrate seed
 if errorlevel 1 goto :fail
 
 docker compose -f infra\docker-compose.yml up -d --force-recreate ai backend web
@@ -29,6 +29,7 @@ goto :eof
 echo.
 echo BUILD FAILED.
 echo Check disk space, then inspect:
+echo docker compose -f infra\docker-compose.yml logs --tail=200 migrate seed
 echo docker compose -f infra\docker-compose.yml logs --tail=200 ai
 echo docker compose -f infra\docker-compose.yml logs --tail=200 backend
 exit /b 1

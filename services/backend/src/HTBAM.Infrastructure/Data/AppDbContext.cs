@@ -4,8 +4,12 @@ using Microsoft.EntityFrameworkCore;
 
 namespace HTBAM.Infrastructure.Data;
 
-public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options), IAppDbContext
+public sealed partial class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options), IAppDbContext
 {
+    public bool DevelopmentDataEnabled { get; set; }
+    public DbSet<CourseCodeCounter> CourseCodeCounters => Set<CourseCodeCounter>();
+    public DbSet<LecturerCodeSequence> LecturerCodeSequences => Set<LecturerCodeSequence>();
+    public DbSet<CatalogSeedIdentity> CatalogSeedIdentities => Set<CatalogSeedIdentity>();
     public DbSet<User> UsersSet => Set<User>(); public IQueryable<User> Users => UsersSet;
     public DbSet<Role> RolesSet => Set<Role>(); public IQueryable<Role> Roles => RolesSet;
     public DbSet<UserRole> UserRoles => Set<UserRole>();
@@ -44,6 +48,19 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 
     protected override void OnModelCreating(ModelBuilder b)
     {
+        b.Entity<CourseCodeCounter>().ToTable("CourseCodeCounters");
+        b.Entity<LecturerCodeSequence>().ToTable("LecturerCodeSequences");
+        b.Entity<LecturerCodeSequence>().HasKey(x=>x.DepartmentId);
+        b.Entity<LecturerCodeSequence>().HasOne<Department>().WithMany().HasForeignKey(x=>x.DepartmentId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<CourseCodeCounter>().HasKey(x=>x.DepartmentId);
+        b.Entity<CourseCodeCounter>().HasOne<Department>().WithMany().HasForeignKey(x=>x.DepartmentId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<CatalogSeedIdentity>().ToTable("CatalogSeedIdentities");
+        b.Entity<CatalogSeedIdentity>().HasKey(x=>x.Key);
+        b.Entity<CatalogSeedIdentity>().Property(x=>x.Key).HasMaxLength(64);
+        b.Entity<CatalogSeedIdentity>().HasOne<Department>().WithMany().HasForeignKey(x=>x.DepartmentId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<CatalogSeedIdentity>().HasOne<Course>().WithMany().HasForeignKey(x=>x.CourseId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<CatalogSeedIdentity>().HasIndex(x=>x.DepartmentId).IsUnique().HasFilter("[DepartmentId] IS NOT NULL");
+        b.Entity<CatalogSeedIdentity>().HasIndex(x=>x.CourseId).IsUnique().HasFilter("[CourseId] IS NOT NULL");
         var tableNames = new Dictionary<Type,string> {
             [typeof(User)]="Users",[typeof(Role)]="Roles",[typeof(UserRole)]="UserRoles",[typeof(Faculty)]="Faculties",[typeof(Department)]="Departments",[typeof(StudentClass)]="StudentClasses",[typeof(Student)]="Students",[typeof(Teacher)]="Teachers",[typeof(ManagementAssignment)]="ManagementAssignments",[typeof(Course)]="Courses",[typeof(ClassSection)]="ClassSections",[typeof(Enrollment)]="Enrollments",[typeof(Room)]="Rooms",[typeof(Camera)]="Cameras",[typeof(FaceEnrollment)]="FaceEnrollments",[typeof(StudentFaceImage)]="StudentFaceImages",[typeof(StudentFaceTemplate)]="StudentFaceTemplates",[typeof(Video)]="Videos",[typeof(AttendancePolicy)]="AttendancePolicies",[typeof(Session)]="Sessions",[typeof(SessionSubstitution)]="SessionSubstitutions",[typeof(SessionStudent)]="SessionStudents",[typeof(AnalysisJob)]="AnalysisJobs",[typeof(StableIdentity)]="StableIdentities",[typeof(TrackSegment)]="TrackSegments",[typeof(IdentityLink)]="IdentityLinks",[typeof(AiEventReceipt)]="AiEventReceipts",[typeof(BehaviorEvent)]="BehaviorEvents",[typeof(AlertRule)]="AlertRules",[typeof(Alert)]="Alerts",[typeof(Attendance)]="Attendance",[typeof(StudentSessionSummary)]="StudentSessionSummaries",[typeof(ClassSessionSummary)]="ClassSessionSummaries",[typeof(AuditLog)]="AuditLogs"};
         foreach (var kv in tableNames) b.Entity(kv.Key).ToTable(kv.Value);
@@ -70,6 +87,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         b.Entity<AttendancePolicy>().HasIndex(x=>x.Code).IsUnique(); b.Entity<Session>().Property(x=>x.RowVersion).IsRowVersion(); b.Entity<Session>().HasOne(x=>x.OriginalTeacher).WithMany().HasForeignKey(x=>x.OriginalTeacherId).OnDelete(DeleteBehavior.Restrict); b.Entity<SessionSubstitution>().HasIndex(x=>x.SessionId).IsUnique().HasFilter("[Status] = 'ACTIVE'"); b.Entity<SessionSubstitution>().HasIndex(x=>new{x.SubstituteTeacherId,x.Status}); b.Entity<SessionSubstitution>().HasOne(x=>x.OriginalTeacher).WithMany().HasForeignKey(x=>x.OriginalTeacherId).OnDelete(DeleteBehavior.Restrict); b.Entity<SessionSubstitution>().HasOne(x=>x.SubstituteTeacher).WithMany().HasForeignKey(x=>x.SubstituteTeacherId).OnDelete(DeleteBehavior.Restrict); b.Entity<SessionSubstitution>().HasOne(x=>x.AssignedByUser).WithMany().HasForeignKey(x=>x.AssignedByUserId).OnDelete(DeleteBehavior.Restrict); b.Entity<SessionSubstitution>().HasOne(x=>x.AssignedByTeacher).WithMany().HasForeignKey(x=>x.AssignedByTeacherId).OnDelete(DeleteBehavior.Restrict); b.Entity<SessionStudent>().HasKey(x=>new{x.SessionId,x.StudentId});
         b.Entity<AlertRule>().Property(x=>x.Code).HasMaxLength(64); b.Entity<AlertRule>().Property(x=>x.Name).HasMaxLength(256); b.Entity<AlertRule>().Property(x=>x.BehaviorLabel).HasMaxLength(32); b.Entity<AlertRule>().Property(x=>x.Version).HasMaxLength(32);
         b.Entity<AnalysisJob>().HasIndex(x=>x.CorrelationId).IsUnique(); b.Entity<StableIdentity>().HasIndex(x=>new{x.SessionId,x.StableId}).IsUnique(); b.Entity<AiEventReceipt>().HasIndex(x=>x.ExternalEventId).IsUnique(); b.Entity<BehaviorEvent>().HasIndex(x=>x.ExternalEventId).IsUnique(); b.Entity<Alert>().HasIndex(x=>x.ExternalEventId).IsUnique(); b.Entity<AlertRule>().HasIndex(x=>x.Code).IsUnique(); b.Entity<Attendance>().HasIndex(x=>new{x.SessionId,x.StudentId}).IsUnique(); b.Entity<StudentSessionSummary>().HasIndex(x=>new{x.SessionId,x.StudentId}).IsUnique(); b.Entity<ClassSessionSummary>().HasIndex(x=>x.SessionId).IsUnique();
+        ConfigureAcademicModel(b);
+        ConfigureSqlRelationships(b);
+        ConfigureSqlColumnSizes(b);
         foreach(var p in b.Model.GetEntityTypes().SelectMany(t=>t.GetProperties()).Where(p=>p.ClrType==typeof(decimal)||p.ClrType==typeof(decimal?))){p.SetPrecision(8);p.SetScale(5);}
     }
 }

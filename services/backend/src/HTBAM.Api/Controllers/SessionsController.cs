@@ -15,18 +15,28 @@ namespace HTBAM.Api.Controllers;
 public sealed class SessionsController(AppDbContext db, ISessionService sessions, IAiClient ai, IConfiguration cfg, IAuditService audit, IHubContext<SessionHub> hub) : ControllerBase
 {
     [HttpGet]
-    public async Task<ActionResult> List([FromQuery] string? status, [FromQuery] long? classSectionId, [FromQuery] DateTime? from, [FromQuery] DateTime? to, CancellationToken ct)
+    public async Task<ActionResult> List([FromQuery] string? status, [FromQuery] long? classSectionId, [FromQuery] DateTime? from, [FromQuery] DateTime? to, CancellationToken ct, [FromQuery] long? departmentId = null, [FromQuery] int? page = null, [FromQuery] int pageSize = 20)
     {
         var teacherId = await AccessScope.TeacherIdAsync(db, User, ct);
         var q = AccessScope.Sessions(db, User, teacherId).AsNoTracking().Include(x => x.ClassSection).ThenInclude(x => x.Teacher).AsQueryable();
         if (!string.IsNullOrWhiteSpace(status)) q = q.Where(x => x.Status == status.ToUpper());
+        if (departmentId != null) q = q.Where(x => x.ClassSection.Course.DepartmentId == departmentId);
         if (classSectionId != null) q = q.Where(x => x.ClassSectionId == classSectionId);
         if (from != null) q = q.Where(x => x.ScheduledStart >= from);
         if (to != null) q = q.Where(x => x.ScheduledStart < to);
-        return Ok(await q.OrderByDescending(x => x.ScheduledStart).Select(x => new
+        var total = await q.CountAsync(ct);
+        var resultQuery = q.OrderByDescending(x => x.ScheduledStart).ThenBy(x => x.Id).Select(x => new
         {
             x.Id,
             x.ClassSectionId,
+            ClassSection = x.ClassSection.Code,
+            Course = x.ClassSection.Course.Name,
+            x.ClassScheduleId,
+            x.OccurrenceDate,
+            x.StartPeriod,
+            x.EndPeriod,
+            x.RoomId,
+            Room = db.Rooms.Where(r => r.Id == x.RoomId).Select(r => r.Name).FirstOrDefault(),
             x.ScheduledStart,
             x.ScheduledEnd,
             x.StartedAt,
@@ -45,10 +55,13 @@ public sealed class SessionsController(AppDbContext db, ISessionService sessions
                 ? db.SessionSubstitutionsSet.Any(s => s.SessionId == x.Id && s.Status == "ACTIVE" && s.SubstituteTeacherId == teacherId)
                 : (x.OriginalTeacherId == teacherId || (x.OriginalTeacherId == 0 && x.ClassSection.TeacherId == teacherId))),
             CanManage = teacherId > 0 && (x.OriginalTeacherId == teacherId || (x.OriginalTeacherId == 0 && x.ClassSection.TeacherId == teacherId) ||
-                db.ManagementAssignmentsSet.Any(a => a.TeacherId == teacherId && a.IsActive &&
+                AccessScope.ActiveAssignments(db).Any(a => a.TeacherId == teacherId && a.IsActive &&
                     ((a.PositionType == "DEPARTMENT_HEAD" && a.DepartmentId == x.ClassSection.Course.DepartmentId) ||
                      (a.PositionType == "FACULTY_HEAD" && a.FacultyId != null && db.DepartmentsSet.Any(d => d.Id == x.ClassSection.Course.DepartmentId && d.FacultyId == a.FacultyId)))))
-        }).ToListAsync(ct));
+        });
+        if (page is null) return Ok(await resultQuery.ToListAsync(ct));
+        page = Math.Max(1, page.Value); pageSize = Math.Clamp(pageSize, 1, 100);
+        return Ok(new { items = await resultQuery.Skip((page.Value - 1) * pageSize).Take(pageSize).ToListAsync(ct), total, page, pageSize });
     }
 
     [HttpGet("{id:long}")]
@@ -72,7 +85,7 @@ public sealed class SessionsController(AppDbContext db, ISessionService sessions
         var cameraMode = cameraInfo?.RtspUrl.StartsWith("browser://", StringComparison.OrdinalIgnoreCase) == true
             ? "BROWSER"
             : x.CameraId is not null ? "RTSP" : null;
-        return Ok(new { x.Id, x.ClassSectionId, ClassSection = x.ClassSection.Code, Course = x.ClassSection.Course.Name, Teacher = x.ClassSection.Teacher.FullName, OriginalTeacherId = originalTeacherId, OriginalTeacherName = originalTeacherName, ActualTeacherId = substitution?.SubstituteTeacherId ?? originalTeacherId, ActualTeacherName = substitution?.SubstituteTeacherName ?? originalTeacherName, Substitution = substitution, ActiveSubstitution = substitution?.Status == "ACTIVE" ? substitution : null, CanOperate = canOperate, CanManage = canManage, x.RoomId, x.CameraId, CameraName = cameraInfo?.Name, CameraMode = cameraMode, x.VideoId, x.AttendancePolicyId, x.ScheduledStart, x.ScheduledEnd, x.StartedAt, x.EndedAt, x.Status, x.AlertProfile, x.LecturerComment, roster });
+        return Ok(new { x.Id, x.ClassSectionId, ClassSection = x.ClassSection.Code, Course = x.ClassSection.Course.Name, Teacher = x.ClassSection.Teacher.FullName, OriginalTeacherId = originalTeacherId, OriginalTeacherName = originalTeacherName, ActualTeacherId = substitution?.SubstituteTeacherId ?? originalTeacherId, ActualTeacherName = substitution?.SubstituteTeacherName ?? originalTeacherName, Substitution = substitution, ActiveSubstitution = substitution?.Status == "ACTIVE" ? substitution : null, CanOperate = canOperate, CanManage = canManage, IsScheduled = x.ClassScheduleId != null, x.ClassScheduleId, x.OccurrenceDate, x.StartPeriod, x.EndPeriod, x.RoomId, x.CameraId, CameraName = cameraInfo?.Name, CameraMode = cameraMode, x.VideoId, SourceConfigured = x.CameraId != null || x.VideoId != null, x.AttendancePolicyId, x.ScheduledStart, x.ScheduledEnd, x.StartedAt, x.EndedAt, x.Status, x.AlertProfile, x.LecturerComment, roster });
     }
 
     [HttpPost, Authorize(Roles = "LECTURER")]
@@ -92,6 +105,7 @@ public sealed class SessionsController(AppDbContext db, ISessionService sessions
         if (r.VideoId is not null && !await AccessScope.CanViewVideoAsync(db, User, r.VideoId.Value, ct)) return Forbid();
         var current = await db.SessionsSet.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (current is null) return NotFound();
+        if (current.ClassScheduleId != null) return Conflict(new { code = "SCHEDULE_PREVIEW_REQUIRED", message = "Buổi thuộc lịch chỉ được thay đổi qua bước xem trước lịch lớp học phần." });
         if (current.Status is not ("DRAFT" or "READY")) return Conflict("Chỉ có thể sửa buổi học ở trạng thái bản nháp hoặc sẵn sàng.");
         if ((r.CameraId is null) == (r.VideoId is null)) return BadRequest("Phải chọn đúng một nguồn camera hoặc video.");
         if (r.AttendancePolicyId <= 0 || !await db.AttendancePoliciesSet.AnyAsync(x => x.Id == r.AttendancePolicyId && x.IsActive, ct)) return BadRequest("Chính sách chuyên cần không hợp lệ.");
@@ -110,6 +124,43 @@ public sealed class SessionsController(AppDbContext db, ISessionService sessions
         await audit.WriteAsync(UserContext.Id(User), "SESSION_UPDATE", "Session", id.ToString(), new { current.ClassSectionId, current.OriginalTeacherId, current.CameraId, current.VideoId }, ct);
         return NoContent();
     }
+
+    public record SourceRequest(long? CameraId, long? VideoId);
+
+    [HttpPut("{id:long}/source"), Authorize(Roles = "LECTURER")]
+    public Task<ActionResult> ConfigureSource(long id, SourceRequest r, CancellationToken ct) =>
+        BusinessTransaction.Run<ActionResult>(db, "HTBAM:session-source", async () =>
+        {
+            if (!await AccessScope.CanOperateSessionAsync(db, User, id, ct)) return Forbid();
+            var session = await db.SessionsSet.FirstOrDefaultAsync(x => x.Id == id, ct);
+            if (session is null) return NotFound();
+            if (session.Status is not ("DRAFT" or "READY") || session.StartedAt != null ||
+                await db.AnalysisJobsSet.AnyAsync(x => x.SessionId == id, ct))
+                return Conflict("Không thể đổi nguồn buổi học đã bắt đầu hoặc có dữ liệu phân tích.");
+            if ((r.CameraId is null) == (r.VideoId is null))
+                return BadRequest("Chọn đúng một nguồn camera hoặc video.");
+
+            if (r.CameraId != null)
+            {
+                var cameraValid = await db.CamerasSet.AnyAsync(x => x.Id == r.CameraId && x.IsActive && x.RoomId == session.RoomId, ct);
+                if (!cameraValid) return BadRequest("Camera không hoạt động hoặc không thuộc phòng học.");
+                var end = session.ScheduledEnd ?? session.ScheduledStart.AddHours(2);
+                var conflict = await db.SessionsSet.AnyAsync(x => x.Id != id && x.CameraId == r.CameraId &&
+                    x.Status != "CANCELLED" && x.Status != "COMPLETED" &&
+                    x.ScheduledStart < end && (x.ScheduledEnd ?? x.ScheduledStart.AddHours(2)) > session.ScheduledStart, ct);
+                if (conflict) return Conflict("Camera đã được gán cho buổi học khác trong khoảng thời gian này.");
+            }
+            if (r.VideoId != null && (!await AccessScope.CanViewVideoAsync(db, User, r.VideoId.Value, ct) ||
+                !await db.VideosSet.AnyAsync(x => x.Id == r.VideoId && x.Status == "READY" && x.VideoType == "INPUT_UPLOAD", ct)))
+                return Forbid();
+
+            session.CameraId = r.CameraId;
+            session.VideoId = r.VideoId;
+            session.Status = "READY";
+            await db.SaveChangesAsync(ct);
+            await audit.WriteAsync(UserContext.Id(User), "SESSION_SOURCE_CONFIGURE", "Session", id.ToString(), r, ct);
+            return NoContent();
+        }, ct);
 
     [HttpPost("{id:long}/cancel"), Authorize(Roles = "LECTURER")]
     public async Task<ActionResult> Cancel(long id, CancellationToken ct)
@@ -134,6 +185,20 @@ public sealed class SessionsController(AppDbContext db, ISessionService sessions
     public async Task<ActionResult> Start(long id, CancellationToken ct)
     {
         if (!await AccessScope.CanOperateSessionAsync(db, User, id, ct)) return Forbid();
+        var session = await db.SessionsSet.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (session is null) return NotFound();
+        if ((session.CameraId is null) == (session.VideoId is null))
+            return Conflict(new { code = "SOURCE_REQUIRED", message = "Buổi học chưa có đúng một nguồn camera hoặc video. Hãy cấu hình nguồn trước khi bắt đầu." });
+        if (session.CameraId != null)
+        {
+            if (!await db.CamerasSet.AnyAsync(x => x.Id == session.CameraId && x.IsActive && x.RoomId == session.RoomId, ct))
+                return Conflict(new { code = "SOURCE_INVALID", message = "Camera không còn hoạt động hoặc không thuộc phòng của buổi học." });
+            if (await db.SessionsSet.AnyAsync(x => x.Id != id && x.CameraId == session.CameraId &&
+                (x.Status == "STARTING" || x.Status == "RUNNING" || x.Status == "FINALIZING"), ct))
+                return Conflict(new { code = "CAMERA_IN_USE", message = "Camera đang được một buổi học khác sử dụng." });
+        }
+        if (session.VideoId != null && !await db.VideosSet.AnyAsync(x => x.Id == session.VideoId && x.Status == "READY" && x.VideoType == "INPUT_UPLOAD", ct))
+            return Conflict(new { code = "SOURCE_INVALID", message = "Video nguồn không tồn tại hoặc chưa sẵn sàng." });
         var baseUrl = cfg["PublicBaseUrl"] ?? $"{Request.Scheme}://{Request.Host}";
         var job = await sessions.StartAsync(id, $"{baseUrl.TrimEnd('/')}/api/ai/events", cfg["AiService:CallbackApiKey"] ?? "", ct);
         await audit.WriteAsync(UserContext.Id(User), "SESSION_START", "Session", id.ToString(), new { job.Id, job.ExternalJobId, job.ModelVersion }, ct);
@@ -185,17 +250,25 @@ public sealed class SessionsController(AppDbContext db, ISessionService sessions
         if (!await AccessScope.CanOperateSessionAsync(db, User, id, ct)) return Forbid();
         await sessions.StopAsync(id, ct);
         await audit.WriteAsync(UserContext.Id(User), "SESSION_STOP", "Session", id.ToString(), null, ct);
-        await hub.Clients.Group($"session:{id}").SendAsync("sessionStatus", new { sessionId = id, status = "COMPLETED" }, ct);
-        return NoContent();
+        var status = await db.SessionsSet.Where(x => x.Id == id).Select(x => x.Status).SingleAsync(ct);
+        await hub.Clients.Group($"session:{id}").SendAsync("sessionStatus", new { sessionId = id, status }, ct);
+        return status == "COMPLETED" ? NoContent() : Accepted(new { status });
     }
 
     [HttpPost("{id:long}/retry-finalize"), Authorize(Roles = "LECTURER,TECH_AI")]
     public async Task<ActionResult> Retry(long id, CancellationToken ct)
     {
-        if (!await AccessScope.CanOperateSessionAsync(db, User, id, ct)) return Forbid();
+        var currentStatus = await db.SessionsSet.AsNoTracking().Where(x => x.Id == id).Select(x => x.Status).FirstOrDefaultAsync(ct);
+        if (currentStatus is null) return NotFound();
+        var allowed = currentStatus == "COMPLETED"
+            ? await AccessScope.CanViewSessionAsync(db, User, id, ct)
+            : await AccessScope.CanOperateSessionAsync(db, User, id, ct);
+        if (!allowed) return Forbid();
         await sessions.RetryFinalizeAsync(id, ct);
         await audit.WriteAsync(UserContext.Id(User), "SESSION_RETRY_FINALIZE", "Session", id.ToString(), null, ct);
-        return NoContent();
+        var status = await db.SessionsSet.Where(x => x.Id == id).Select(x => x.Status).SingleAsync(ct);
+        await hub.Clients.Group($"session:{id}").SendAsync("sessionStatus", new { sessionId = id, status }, ct);
+        return status == "COMPLETED" ? NoContent() : Accepted(new { status });
     }
 
     public record CommentReq(string? Comment);

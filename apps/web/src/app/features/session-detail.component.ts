@@ -15,8 +15,10 @@ import { BackButtonComponent, ModalComponent, PageTitleComponent, behaviorText, 
     <app-page-title [title]="session()?.classSection ? session().classSection + ' · Buổi #' + sessionId : 'Buổi học #' + sessionId" [subtitle]="sessionSubtitle()">
       <span class="badge" [class.blue]="realtimeState() === 'ONLINE'" [class.warning]="realtimeState() === 'CONNECTING'" [class.gray]="realtimeState() === 'OFFLINE'">{{ realtimeLabel() }}</span>
       <button type="button" class="secondary" (click)="load()">Cập nhật</button>
-      @if (session()?.canOperate && (session()?.status === 'READY' || session()?.status === 'DRAFT')) { <button type="button" (click)="requestAction('start')">Bắt đầu</button> }
-      @if (session()?.canOperate && session()?.status === 'RUNNING') { <button type="button" class="danger" (click)="requestAction('stop')">Kết thúc</button> }
+      @if (session()?.canOperate && (session()?.status === 'READY' || session()?.status === 'DRAFT')) { <button type="button" [disabled]="acting() || pendingAction() !== null" (click)="requestAction('start')">Bắt đầu</button> }
+      @if (session()?.canOperate && session()?.status === 'RUNNING') { <button type="button" class="danger" [disabled]="acting() || pendingAction() !== null" (click)="requestAction('stop')">Kết thúc</button> }
+      @if (session()?.canOperate && session()?.status === 'FINALIZE_FAILED') { <button type="button" class="danger" [disabled]="acting() || pendingAction() !== null" (click)="requestAction('retry-finalize')">Thử hoàn tất lại</button> }
+      @if (session()?.status === 'COMPLETED' && hasMissingOutputs()) { <button type="button" class="secondary" [disabled]="acting() || pendingAction() !== null" (click)="requestAction('retry-finalize')">Kiểm tra/khôi phục đầu ra</button> }
     </app-page-title>
 
     @if (error()) { <div class="error-box">{{ error() }}</div> }
@@ -24,14 +26,22 @@ import { BackButtonComponent, ModalComponent, PageTitleComponent, behaviorText, 
     @if (dashboardError()) { <div class="error-box">Bảng theo dõi: {{ dashboardError() }}</div> }
     @if (message()) { <div class="success-box">{{ message() }}</div> }
     @if (loading()) { <div class="notice">Đang tải dữ liệu buổi học…</div> }
+    @if (session()?.status === 'FINALIZING') { <div class="notice">Đang kết thúc buổi học: AI đang xử lý các chunk đã nhận và ghi bền vững dữ liệu cuối. Bạn có thể rời trang; hệ thống sẽ tiếp tục hoàn tất.</div> }
+    @if (session()?.status === 'FINALIZE_FAILED') { <div class="error-box">Lần hoàn tất trước chưa thành công. Dữ liệu đã nhận vẫn được giữ; bấm “Thử hoàn tất lại” để tiếp tục.</div> }
 
     @if (dashboard()) {
       <div class="stats stats-four">
         <section class="stat-card"><div class="stat-card-head"><div class="stat-icon">◎</div></div><span>Nhận diện hoạt động</span><strong>{{ dashboard().activeIdentities }}</strong><small>Định danh ổn định</small></section>
         <section class="stat-card"><div class="stat-card-head"><div class="stat-icon green">✓</div></div><span>Đã nhận diện</span><strong>{{ dashboard().identifiedStudents }}</strong><small>Sinh viên</small></section>
         <section class="stat-card"><div class="stat-card-head"><div class="stat-icon amber">?</div></div><span>Chưa xác định</span><strong>{{ dashboard().unknownIdentities }}</strong><small>Định danh chưa liên kết</small></section>
-        <section class="stat-card"><div class="stat-card-head"><div class="stat-icon red">!</div></div><span>Cảnh báo</span><strong>{{ dashboard().recentAlerts?.length || 0 }}</strong><small>Gần đây</small></section>
+        <section class="stat-card"><div class="stat-card-head"><div class="stat-icon red">!</div></div><span>Cảnh báo</span><strong>{{ dashboard().totalAlerts ?? dashboard().recentAlerts?.length ?? 0 }}</strong><small>Toàn bộ buổi học</small></section>
       </div>
+
+      @if (dashboard().outputs) {
+        <section class="card"><div class="card-header" style="margin:-20px -20px 18px"><div><h3>Đầu ra đã lưu</h3><p>Trạng thái dữ liệu phát sinh từ buổi học</p></div></div>
+          <div class="service-grid">@for(item of outputEntries();track item.key){<div class="service-card"><span class="status-dot" [style.background]="item.status === 'AVAILABLE' ? '#16a34a' : '#94a3b8'"></span><div><strong>{{item.label}} · {{item.count}}</strong><small>{{item.message}}</small></div></div>}</div>
+        </section>
+      }
 
       <div class="dashboard-grid">
         <section class="card" style="min-height:360px">
@@ -77,7 +87,7 @@ import { BackButtonComponent, ModalComponent, PageTitleComponent, behaviorText, 
           @for (metric of behaviorMetrics(); track metric.label) {
             <div class="metric-row"><span>{{ metric.label }}</span><div class="progress-track"><div class="progress-value" [style.width.%]="metric.value" [style.background]="metric.color"></div></div><strong>{{ metric.value }}%</strong></div>
           }
-          <div class="service-grid" style="grid-template-columns:1fr 1fr;margin-top:22px">
+          <div class="service-grid service-grid-two" style="margin-top:22px">
             <div class="service-card"><span class="status-dot" [style.background]="modelLoaded('HTBAM-X:') ? '#16a34a' : '#dc2626'"></span><div><strong>HTBAM-X</strong><small>{{ modelLoaded('HTBAM-X:') ? modelName('HTBAM-X:') : 'Chưa tải' }}</small></div></div>
             <div class="service-card"><span class="status-dot" [style.background]="modelLoaded('ArcFace/') ? '#16a34a' : '#dc2626'"></span><div><strong>ArcFace</strong><small>{{ modelLoaded('ArcFace/') ? modelName('ArcFace/') : 'Chưa tải' }}</small></div></div>
             <div class="service-card"><span class="status-dot" [style.background]="dashboard().modelReady ? '#16a34a' : '#dc2626'"></span><div><strong>Pipeline buổi học</strong><small>{{ dashboard().modelReady ? 'Sẵn sàng' : 'Chưa sẵn sàng' }}</small></div></div>
@@ -98,7 +108,7 @@ import { BackButtonComponent, ModalComponent, PageTitleComponent, behaviorText, 
                   <td>{{ percent(row.identityConfidence) }}</td><td><span class="badge blue">{{ behaviorLabel(row.currentBehavior) }}</span></td>
                   <td>{{ percent(row.behaviorProbability) }}</td><td>{{ date(row.lastSeenAt) }}</td>
                 </tr>
-              } @empty { <tr><td colspan="7" class="empty">Chưa có identity đang hoạt động.</td></tr> }
+              } @empty { <tr><td colspan="7" class="empty">{{ session()?.status === 'COMPLETED' ? 'Không ghi nhận danh tính từ pipeline trong buổi học này.' : 'Chưa có identity đang hoạt động.' }}</td></tr> }
             </tbody>
           </table>
         </div>
@@ -179,13 +189,20 @@ export class SessionDetailComponent implements OnInit, OnDestroy {
       session: this.api.session(this.sessionId).pipe(catchError((error) => { this.sessionError.set(errorText(error)); return of(null); })),
       dashboard: this.api.sessionDashboard(this.sessionId).pipe(catchError((error) => { this.dashboardError.set(errorText(error)); return of(null); })),
     }).subscribe({
-      next: (result) => { this.session.set(result.session); this.dashboard.set(result.dashboard); this.loading.set(false); },
+      next: (result) => {
+        this.session.set(result.session); this.dashboard.set(result.dashboard); this.loading.set(false);
+        if (result.session?.status === 'FINALIZING') this.scheduleFinalizeRefresh();
+      },
     });
   }
-  requestAction(action: 'start' | 'stop' | 'cancel' | 'retry-finalize'): void { this.pendingAction.set(action); }
+  requestAction(action: 'start' | 'stop' | 'cancel' | 'retry-finalize'): void {
+    if (this.acting() || this.pendingAction() !== null) return;
+    this.pendingAction.set(action);
+  }
   async confirmAction(): Promise<void> {
     const action = this.pendingAction();
-    if (!action) return;
+    if (!action || this.acting()) return;
+    const recoveringCompleted = action === 'retry-finalize' && this.session()?.status === 'COMPLETED';
 
     this.acting.set(true);
     this.error.set('');
@@ -207,9 +224,13 @@ export class SessionDetailComponent implements OnInit, OnDestroy {
 
       this.pendingAction.set(null);
       this.message.set(
-        action === 'start' && this.isBrowserCamera()
+        recoveringCompleted
+          ? 'Đã kiểm tra lại đầu ra còn tồn tại và tạo lại báo cáo từ dữ liệu đã lưu.'
+          : action === 'start' && this.isBrowserCamera()
           ? 'Buổi học đã bắt đầu. Camera laptop đang truyền hình ảnh tới AI.'
-          : 'Đã cập nhật trạng thái buổi học.'
+          : action === 'stop' || action === 'retry-finalize'
+            ? 'Đã ghi nhận yêu cầu kết thúc. Hệ thống đang hoàn tất dữ liệu AI.'
+            : 'Đã cập nhật trạng thái buổi học.'
       );
       this.load();
     } catch (error) {
@@ -217,6 +238,7 @@ export class SessionDetailComponent implements OnInit, OnDestroy {
         await this.stopBrowserCapture(false);
       }
       this.error.set(errorText(error));
+      this.load();
     } finally {
       this.acting.set(false);
     }
@@ -323,13 +345,27 @@ export class SessionDetailComponent implements OnInit, OnDestroy {
   private enqueueBrowserChunk(blob: Blob): void {
     const index = this.browserChunkIndex++;
     this.browserUploadChain = this.browserUploadChain
-      .then(async () => {
+      .then(() => this.uploadBrowserChunkWithRetry(blob, index));
+    // Retain the rejected promise for stopBrowserCapture(), but attach a handler
+    // immediately so the browser does not report an unhandled rejection.
+    void this.browserUploadChain.catch(() => undefined);
+  }
+
+  private async uploadBrowserChunkWithRetry(blob: Blob, index: number): Promise<void> {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
         await firstValueFrom(this.api.browserCameraChunk(this.sessionId, blob, index));
-      })
-      .catch((error) => {
-        this.browserCameraState.set('ERROR');
-        this.browserCameraError.set(`Không gửi được hình ảnh tới AI: ${errorText(error)}`);
-      });
+        return;
+      } catch (error) {
+        lastError = error;
+        if (attempt < 4) await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+      }
+    }
+    this.browserCaptureActive = false;
+    this.browserCameraState.set('ERROR');
+    this.browserCameraError.set(`Không gửi được chunk #${index} tới AI sau nhiều lần thử: ${errorText(lastError)}`);
+    throw lastError;
   }
 
   private async stopBrowserCapture(flush: boolean): Promise<void> {
@@ -351,19 +387,34 @@ export class SessionDetailComponent implements OnInit, OnDestroy {
       });
     }
 
-    if (flush) await this.browserUploadChain.catch(() => undefined);
+    let uploadFailure: unknown;
+    if (flush) {
+      try { await this.browserUploadChain; }
+      catch (error) { uploadFailure = error; }
+    }
 
     this.browserStream?.getTracks().forEach((track) => track.stop());
     this.browserStream = null;
     if (this.browserPreview?.nativeElement) this.browserPreview.nativeElement.srcObject = null;
     this.browserCameraState.set('IDLE');
+    if (uploadFailure) throw uploadFailure;
   }
 
   modelLoaded(prefix: string): boolean { return (this.dashboard()?.loadedModels ?? []).some((x: string) => x.startsWith(prefix)); }
+  outputEntries(): Array<{key:string;label:string;status:string;count:number;message:string}> { const source=this.dashboard()?.outputs??{}; const labels:Record<string,string>={video:'Video',behaviorEvents:'Sự kiện hành vi',alerts:'Cảnh báo',identities:'Danh tính',attendance:'Chuyên cần',summaries:'Báo cáo tổng hợp'}; return Object.entries(source).map(([key,value]:[string,any])=>({key,label:labels[key]??key,status:value?.status??'EMPTY',count:Number(value?.count??0),message:String(value?.message??'')})); }
+  hasMissingOutputs(): boolean { const outputs=this.dashboard()?.outputs; return !!outputs && (outputs.video?.status === 'NOT_CREATED' || outputs.summaries?.status !== 'AVAILABLE'); }
   modelName(prefix: string): string { return (this.dashboard()?.loadedModels ?? []).find((x: string) => x.startsWith(prefix)) ?? 'Đã tải'; }
   realtimeLabel(): string { return ({ CONNECTING: 'Đang kết nối realtime', ONLINE: 'Realtime trực tuyến', OFFLINE: 'Realtime gián đoạn' } as const)[this.realtimeState()]; }
-  actionTitle(): string { return this.pendingAction() === 'start' ? 'Bắt đầu buổi học' : 'Kết thúc buổi học'; }
-  actionMessage(): string { return this.pendingAction() === 'start' ? 'Bắt đầu luồng phân tích AI cho buổi học này?' : 'Kết thúc buổi học và tiến hành tổng hợp dữ liệu?'; }
+  actionTitle(): string { return this.pendingAction() === 'start' ? 'Bắt đầu buổi học' : this.pendingAction() === 'retry-finalize' ? 'Thử hoàn tất lại' : 'Kết thúc buổi học'; }
+  actionMessage(): string { return this.pendingAction() === 'start' ? 'Bắt đầu luồng phân tích AI cho buổi học này?' : this.pendingAction() === 'retry-finalize' ? (this.session()?.status === 'COMPLETED' ? 'Tạo lại báo cáo từ dữ liệu đã lưu và chỉ đăng ký video nếu artifact thật vẫn còn?' : 'Gửi lại yêu cầu hoàn tất mà không tạo job AI mới?') : 'Kết thúc nhận dữ liệu mới và tiến hành tổng hợp các chunk đã gửi?'; }
+
+  private scheduleFinalizeRefresh(): void {
+    if (this.refreshTimer) return;
+    this.refreshTimer = setTimeout(() => {
+      this.refreshTimer = null;
+      this.load();
+    }, 2_000);
+  }
 
   private startFastOverlayLoop(): void {
     if (this.fastOverlayTimer) return;

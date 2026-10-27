@@ -19,5 +19,11 @@ for(const required of ['deactivatePolicy','reactivatePolicy','Kích hoạt lại
 const users=fs.readFileSync(path.join(root,'app','features','admin-users.component.ts'),'utf8');
 for(const required of ["askStatus(user,'INACTIVE')",'Kích hoạt lại',"fieldErrors()['userName']", "fieldErrors()['email']"]){if(!users.includes(required))bad.push(`admin-users.component.ts: thiếu luồng ${required}`)}
 for(const [file,raw] of [['account.component.ts','{{ me()!.status }}'],['search.component.ts','{{item.status}}'],['session-detail.component.ts','{{ dashboard().aiHealth }}'],['session-detail.component.ts','{{ dashboard().cameraHealth }}']]){const source=fs.readFileSync(path.join(root,'app','features',file),'utf8');if(source.includes(raw))bad.push(`${file}: còn hiển thị trạng thái thô ${raw}`)}
+const videos=fs.readFileSync(path.join(root,'app','features','videos.component.ts'),'utf8');
+for(const required of ['[src]="previewUrl()"','previewVideo.set(video)','previewLoading.set(true)','(loadedmetadata)="onMetadata($event)"','(error)="onVideoError()"']){if(!videos.includes(required))bad.push(`videos.component.ts: thiếu luồng phát video backend có trạng thái/lỗi: ${required}`)}
+const reports=fs.readFileSync(path.join(root,'app','features','reports.component.ts'),'utf8');
+for(const required of ['reportOptions(this.kind)','loadOptions()','Phạm vi được phép xem','không tự tạo dữ liệu báo cáo']){if(!reports.includes(required))bad.push(`reports.component.ts: thiếu danh sách báo cáo theo phạm vi backend: ${required}`)}
+const guards=fs.readFileSync(path.join(root,'app','core','auth.guard.ts'),'utf8');
+if(!guards.includes("reportGuard = permissionGuard('REPORT_VIEW')"))bad.push('auth.guard.ts: quyền route báo cáo không khớp REPORT_VIEW backend');
 if(bad.length){console.error(bad.join('\n'));process.exit(1)}
 console.log(`FRONTEND_TS_SYNTAX_AND_ROW_ACTIONS_OK (${files.length} files)`);

@@ -83,7 +83,7 @@ import { PageTitleComponent, behaviorText, errorText, fmtDate, statusText } from
         <section class="card">
           <div class="card-header" style="margin:-20px -20px 16px"><div><h3>Tình trạng dịch vụ</h3><p>Dữ liệu kiểm tra năng lực hiện tại</p></div></div>
           @if (capabilitiesError()) { <div class="error-box">{{ capabilitiesError() }}</div> }
-          <div class="service-grid" style="grid-template-columns:1fr 1fr">
+          <div class="service-grid service-grid-two">
             @for (service of services(); track service.name) {
               <div class="service-card"><span class="status-dot" [style.background]="service.ok ? '#16a34a' : '#dc2626'"></span><div><strong>{{ service.name }}</strong><small>{{ service.ok ? 'Hoạt động' : 'Cần kiểm tra' }}</small></div></div>
             }
